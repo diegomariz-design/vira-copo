@@ -180,6 +180,22 @@
   .det-add{flex:1;border:none;cursor:pointer;font-weight:800;font-size:15px;color:#fff;
     background:linear-gradient(145deg,var(--vermelho2),var(--vermelho));padding:15px;border-radius:13px;
     display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 22px rgba(255,0,51,.35);}
+  .det-add.disabled{opacity:.45;box-shadow:none;cursor:not-allowed;}
+
+  /* ===================== SELETOR DE GELO (combos) ===================== */
+  .gelo-pick{padding:16px 18px;border-top:1px solid var(--borda2);}
+  .gp-head{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:800;margin-bottom:4px;}
+  .gp-count{font-size:13px;font-weight:800;color:var(--cinza);background:var(--card);border:1px solid var(--borda2);border-radius:999px;padding:3px 11px;}
+  .gp-count.ok{color:var(--ok);border-color:rgba(39,201,63,.4);}
+  .gp-count.miss{color:var(--vermelho2);border-color:var(--borda);}
+  .gp-sub{font-size:12px;color:var(--cinza2);margin-bottom:10px;}
+  .gp-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--borda2);}
+  .gp-row .gp-name{font-size:14.5px;font-weight:600;}
+  .gp-ctrl{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1px solid var(--borda2);border-radius:12px;padding:4px;}
+  .gp-ctrl button{width:30px;height:30px;border:none;border-radius:9px;font-size:17px;font-weight:800;cursor:pointer;background:rgba(255,0,51,.16);color:var(--vermelho2);}
+  .gp-ctrl button:disabled{opacity:.35;cursor:not-allowed;}
+  .gp-ctrl span{min-width:16px;text-align:center;font-weight:800;font-size:14px;}
+  .citem .cgelo{font-size:11.5px;color:#9fe3ad;margin-top:3px;line-height:1.4;}
 
   /* ===================== OVERLAY + SHEETS ===================== */
   .overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.65);opacity:0;pointer-events:none;transition:.25s;}
@@ -450,6 +466,17 @@ const CONFIG = { whatsapp:"5516992058378", taxaEntrega:7.00, minPedido:25.00, ab
 /* ===================== CARDÁPIO =====================
    old = preço "de" · feat = destaque · tag = selo */
 const MENU = [
+  { cat:"Combos", emoji:"🥃", items:[
+    {n:"Combo White Horse", p:95.00, combo:true, gelo:4, feat:true, tag:"Combo", d:"1 White Horse + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Red Label", p:130.00, combo:true, gelo:4, feat:true, d:"1 Red Label + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Ballantine's", p:110.00, combo:true, gelo:4, d:"1 Ballantine's + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Chivas", p:170.00, combo:true, gelo:4, feat:true, tag:"Premium", d:"1 Chivas + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Gin Beefeater", p:125.00, combo:true, gelo:4, d:"1 Gin Beefeater + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Gin Beefeater Pink", p:135.00, combo:true, gelo:4, feat:true, d:"1 Gin Beefeater Pink + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Absolut", p:115.00, combo:true, gelo:4, d:"1 Absolut + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Orloff", p:55.00, combo:true, gelo:4, feat:true, tag:"Melhor preço", d:"1 Orloff + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+    {n:"Combo Smirnoff", p:65.00, combo:true, gelo:4, d:"1 Smirnoff + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
+  ]},
   { cat:"Cervejas", emoji:"🍺", items:[
     {n:"Heineken Long Neck", p:7.90, d:"330ml · gelada", feat:true, tag:"Mais pedida"},
     {n:"Heineken Lata", p:5.90, d:"350ml · gelada"},
@@ -494,6 +521,7 @@ const MENU = [
 let cart = [];
 let lineSeq = 1;
 let lastOrder = null;
+const GELO_FLAVORS = ["Natural","Morango","Maracujá","Limão"];
 const brl = v => "R$ " + v.toFixed(2).replace(".", ",");
 const pct = (old,p) => Math.round((old-p)/old*100);
 
@@ -571,6 +599,7 @@ if(typeof IntersectionObserver!=="undefined"){
 /* ===================== QUICK ADD ===================== */
 function quickAdd(ci,ii){
   const it=MENU[ci].items[ii];
+  if(it.combo){ openDetail(ci,ii); return; } // combo precisa escolher sabores
   const ex=cart.find(l=>l.ci===ci&&l.ii===ii&&!l.notes);
   if(ex){ ex.q++; }
   else cart.push({id:lineSeq++,ci,ii,n:it.n,base:it.p,q:1,notes:"",emoji:MENU[ci].emoji});
@@ -581,7 +610,21 @@ function quickAdd(ci,ii){
 let det=null;
 function openDetail(ci,ii){
   const it=MENU[ci].items[ii];
-  det={ci,ii,q:1};
+  det={ci,ii,q:1,gelos:it.combo?GELO_FLAVORS.map(()=>0):null,geloMax:it.gelo||0};
+  let geloHTML="";
+  if(it.combo){
+    geloHTML=`<div class="gelo-pick">
+      <div class="gp-head">🧊 Sabores dos gelos <span class="gp-count miss" id="geloCount">0/${it.gelo}</span></div>
+      <div class="gp-sub">Escolha exatamente ${it.gelo} gelos de coco — pode misturar os sabores.</div>
+      ${GELO_FLAVORS.map((f,k)=>`<div class="gp-row">
+        <span class="gp-name">${f}</span>
+        <div class="gp-ctrl">
+          <button onclick="chgGelo(${k},-1)">−</button>
+          <span id="gelo-${k}">0</span>
+          <button onclick="chgGelo(${k},1)">+</button>
+        </div></div>`).join("")}
+    </div>`;
+  }
   document.getElementById("detailScroll").innerHTML=`
     <div class="det-hero"><button class="det-back" onclick="closeDetail()">‹</button>${MENU[ci].emoji}</div>
     <div class="det-body">
@@ -589,13 +632,32 @@ function openDetail(ci,ii){
       <p class="ddesc">${it.d}</p>
       <div><span class="det-price">${brl(it.p)}</span>${it.old?`<span class="det-old">${brl(it.old)}</span>`:""}</div>
     </div>
+    ${geloHTML}
     <div class="det-obs"><label>Alguma observação?</label>
       <textarea id="detObs" placeholder="Ex: bem gelada, marca alternativa..."></textarea></div>`;
   document.getElementById("detQ").textContent=1;
   updateDetTotal();
+  if(it.combo) updateGeloUI();
   document.getElementById("detailScreen").classList.add("show");
   document.body.style.overflow="hidden";
   document.getElementById("detailScroll").scrollTop=0;
+}
+function geloTotal(){ return det.gelos?det.gelos.reduce((a,b)=>a+b,0):0; }
+function chgGelo(k,d){
+  if(!det.gelos) return;
+  const novo=det.gelos[k]+d;
+  if(novo<0) return;
+  if(d>0 && geloTotal()>=det.geloMax) return; // não passa do máximo
+  det.gelos[k]=novo;
+  document.getElementById("gelo-"+k).textContent=novo;
+  updateGeloUI();
+}
+function updateGeloUI(){
+  const tot=geloTotal();
+  const c=document.getElementById("geloCount");
+  if(c){ c.textContent=tot+"/"+det.geloMax; c.className="gp-count "+(tot===det.geloMax?"ok":"miss"); }
+  const btn=document.querySelector(".det-add");
+  if(btn) btn.classList.toggle("disabled", tot!==det.geloMax);
 }
 function closeDetail(){ document.getElementById("detailScreen").classList.remove("show"); document.body.style.overflow=""; det=null; }
 function detUnit(){ return MENU[det.ci].items[det.ii].p; }
@@ -603,8 +665,13 @@ function updateDetTotal(){ document.getElementById("detTotal").textContent=brl(d
 function detQty(d){ det.q=Math.max(1,det.q+d); document.getElementById("detQ").textContent=det.q; updateDetTotal(); }
 function detAdd(){
   const it=MENU[det.ci].items[det.ii];
+  let gelos=null;
+  if(it.combo){
+    if(geloTotal()!==det.geloMax){ updateGeloUI(); const gc=document.getElementById("geloCount"); if(gc&&gc.animate){gc.animate([{transform:"scale(1)"},{transform:"scale(1.25)"},{transform:"scale(1)"}],{duration:300});} return; }
+    gelos=GELO_FLAVORS.map((f,k)=>({f,c:det.gelos[k]})).filter(g=>g.c>0);
+  }
   const notes=(document.getElementById("detObs")?.value||"").trim();
-  cart.push({id:lineSeq++,ci:det.ci,ii:det.ii,n:it.n,base:it.p,q:det.q,notes,emoji:MENU[det.ci].emoji});
+  cart.push({id:lineSeq++,ci:det.ci,ii:det.ii,n:it.n,base:it.p,q:det.q,notes,gelos,emoji:MENU[det.ci].emoji});
   closeDetail(); syncAll(); bump();
 }
 
@@ -647,6 +714,7 @@ function renderCart(){
   cart.forEach(l=>{
     html+=`<div class="citem"><div class="cline">
       <div class="cname">${l.q}x ${l.n}</div>
+      ${l.gelos&&l.gelos.length?`<div class="cgelo">🧊 ${l.gelos.map(g=>g.c+"x "+g.f).join(" · ")}</div>`:""}
       ${l.notes?`<div class="cobs">“${l.notes}”</div>`:""}
       <div class="cprice">${brl(lineTotal(l))}</div>
       <div class="qctrl"><button onclick="chgLine(${l.id},-1)">−</button><span>${l.q}</span><button onclick="chgLine(${l.id},1)">+</button></div>
@@ -696,6 +764,7 @@ function finalizar(){
   let itens="";
   cart.forEach(l=>{
     itens+=`• ${l.q}x ${l.n} — ${brl(lineTotal(l))}\n`;
+    if(l.gelos&&l.gelos.length) itens+=`   🧊 gelos: ${l.gelos.map(g=>g.c+"x "+g.f).join(", ")}\n`;
     if(l.notes) itens+=`   obs: ${l.notes}\n`;
   });
   let entrega = isEntrega()
@@ -751,6 +820,7 @@ document.getElementById("taxaLabel").textContent=brl(CONFIG.taxaEntrega);
   if(!CONFIG.aberto){ const p=document.getElementById("statusPill");
     p.className="status-pill"; p.style.background="rgba(255,80,80,.12)"; p.style.color="#ff7a7a"; p.style.borderColor="rgba(255,80,80,.3)";
     p.innerHTML='<span class="dot" style="background:#ff5a5a;box-shadow:0 0 8px #ff5a5a"></span> Fechado'; }
+
 })();
 </script>
 </body>
