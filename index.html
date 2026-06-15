@@ -462,6 +462,13 @@
 <script>
 /* ===================== CONFIG ===================== */
 const CONFIG = { whatsapp:"5516992058378", taxaEntrega:7.00, minPedido:25.00, aberto:true };
+const SUPA = { url:"https://kfzlwutztrjggxhxjlti.supabase.co", key:"sb_publishable_Czq5azHOD1SPGvvvcfWgAw_n_nH2VOk" };
+function sbInsertOrder(row){
+  if(!SUPA.url) return Promise.resolve();
+  return fetch(SUPA.url+"/rest/v1/orders",{method:"POST",
+    headers:{apikey:SUPA.key,Authorization:"Bearer "+SUPA.key,"Content-Type":"application/json",Prefer:"return=minimal"},
+    body:JSON.stringify(row)}).catch(function(e){console.warn("Supabase insert falhou:",e);});
+}
 
 /* ===================== CARDÁPIO =====================
    old = preço "de" · feat = destaque · tag = selo */
@@ -794,6 +801,17 @@ ${pgTxt}${obs?"\n*Obs:* "+obs:""}
 🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.`;
 
   lastOrder = { num, msg };
+
+  // grava o pedido no Supabase (cai no kanban do admin ao vivo)
+  var itensArr = cart.map(function(l){ return {n:l.n,q:l.q,p:l.base,gelos:l.gelos||null}; });
+  sbInsertOrder({
+    numero:String(num), cliente:nome, whatsapp:fone,
+    endereco: isEntrega()?(val("f_rua")+(val("f_num")?", "+val("f_num"):"")):"Retirada no local",
+    bairro:val("f_bairro")||"", pagamento:pg, troco:(pg==="Dinheiro"?val("f_troco"):"")||"",
+    itens:itensArr, subtotal:sub, taxa:taxa, total:total, obs:obs||"",
+    status:"novo", maioridade:true, doc_conferido:null, entrega_autorizada:null,
+    historico:[{ts:new Date().toISOString(),de:null,para:"novo",user:"site"}]
+  });
   document.getElementById("confirmNum").textContent="#"+num;
   document.getElementById("waPreview").innerHTML=`<div class="wa-h">📲 Prévia da mensagem WhatsApp</div>${escapeHtml(msg)}`;
   showSheet("confirmSheet");

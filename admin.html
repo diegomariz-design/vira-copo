@@ -383,6 +383,34 @@ const store = {
   save(){ try{ localStorage.setItem(SKEY, JSON.stringify(DB)); }catch(e){} },
   reset(){ localStorage.removeItem(SKEY); DB=seed(); store.save(); window.DB=DB; },
 };
+
+/* ============================================================
+   SUPABASE (backend real) — pedidos ao vivo
+   ============================================================ */
+const SUPA_ADMIN = { url:"https://kfzlwutztrjggxhxjlti.supabase.co", key:"sb_publishable_Czq5azHOD1SPGvvvcfWgAw_n_nH2VOk" };
+function sbActive(){ return !!SUPA_ADMIN.url; }
+function sbHeaders(extra){ return Object.assign({apikey:SUPA_ADMIN.key,Authorization:"Bearer "+SUPA_ADMIN.key,"Content-Type":"application/json"}, extra||{}); }
+function sbRowToOrder(r){ return {id:r.id,numero:r.numero,cliente:r.cliente,whatsapp:r.whatsapp,endereco:r.endereco,bairro:r.bairro,
+  pagamento:r.pagamento,troco:r.troco||"",itens:r.itens||[],subtotal:+r.subtotal,taxa:+r.taxa,total:+r.total,obs:r.obs||"",
+  status:r.status||"novo",maioridade:r.maioridade,docConferido:r.doc_conferido,entregaAutorizada:r.entrega_autorizada,
+  motivoCancel:r.motivo_cancel||"",entregador:r.entregador||"",criadoEm:r.created_at||nowISO(),historico:r.historico||[]}; }
+function sbOrderToRow(o){ return {numero:o.numero,cliente:o.cliente,whatsapp:o.whatsapp,endereco:o.endereco,bairro:o.bairro,
+  pagamento:o.pagamento,troco:o.troco,itens:o.itens,subtotal:o.subtotal,taxa:o.taxa,total:o.total,obs:o.obs,status:o.status,
+  maioridade:o.maioridade,doc_conferido:o.docConferido,entrega_autorizada:o.entregaAutorizada,motivo_cancel:o.motivoCancel,
+  entregador:o.entregador,historico:o.historico}; }
+function sbPatchOrder(o){ if(!sbActive()||!o.id||String(o.id).indexOf("o_")===0) return;
+  fetch(SUPA_ADMIN.url+"/rest/v1/orders?id=eq."+o.id,{method:"PATCH",headers:sbHeaders({Prefer:"return=minimal"}),body:JSON.stringify(sbOrderToRow(o))}).catch(e=>console.warn("patch falhou",e)); }
+function sbPostOrder(o){ return fetch(SUPA_ADMIN.url+"/rest/v1/orders",{method:"POST",headers:sbHeaders({Prefer:"return=representation"}),body:JSON.stringify(sbOrderToRow(o))}).then(r=>r.json()); }
+let SB_POLL=null;
+function sbSyncOrders(){
+  if(!sbActive()) return Promise.resolve();
+  return fetch(SUPA_ADMIN.url+"/rest/v1/orders?select=*&order=created_at.desc",{headers:sbHeaders()}).then(r=>r.json()).then(rows=>{
+    if(Array.isArray(rows)){ DB.orders=rows.map(sbRowToOrder); store.save();
+      if(["pedidos","dashboard","financeiro","entregas","clientes"].indexOf(CURRENT)>=0) VIEWS[CURRENT]();
+      renderSidebar(); }
+  }).catch(e=>console.warn("sync falhou",e));
+}
+function sbStartPolling(){ if(SB_POLL||!sbActive()) return; SB_POLL=setInterval(sbSyncOrders, 10000); }
 /* ============================================================
    FRAMEWORK — login, navegação, modal, toast
    ============================================================ */
@@ -619,7 +647,7 @@ function setStatus(id,status){
   const o=DB.orders.find(x=>x.id===id); if(!o)return;
   if(status==="cancelado"){ cancelOrder(id); return; }
   if(o.status===status){ toast("Pedido já está nesse status."); return; }
-  const de=o.status; o.status=status; logMove(o,de,status); refresh();
+  const de=o.status; o.status=status; logMove(o,de,status); refresh(); sbPatchOrder(o);
   // mensagem de WhatsApp pronta
   const msg=waMsg(status,o);
   openModal(`Status → ${ST[status].label}`,
@@ -629,8 +657,8 @@ function setStatus(id,status){
      <button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Enviar no WhatsApp</button>`);
   toast("Status atualizado e registrado.");
 }
-function setDoc(id,v){ const o=DB.orders.find(x=>x.id===id); o.docConferido=v; if(v===false){o.entregaAutorizada=false;} store.save(); orderModal(id); toast("Documento atualizado."); }
-function setAuth(id){ const o=DB.orders.find(x=>x.id===id); o.entregaAutorizada=!o.entregaAutorizada; store.save(); orderModal(id); }
+function setDoc(id,v){ const o=DB.orders.find(x=>x.id===id); o.docConferido=v; if(v===false){o.entregaAutorizada=false;} store.save(); sbPatchOrder(o); orderModal(id); toast("Documento atualizado."); }
+function setAuth(id){ const o=DB.orders.find(x=>x.id===id); o.entregaAutorizada=!o.entregaAutorizada; store.save(); sbPatchOrder(o); orderModal(id); }
 function cancelOrder(id){
   const o=DB.orders.find(x=>x.id===id);
   openModal("Cancelar pedido #"+o.numero,
@@ -654,7 +682,7 @@ function confirmCancel(id){
   if(det) motivo+=" — "+det;
   const de=o.status; o.status="cancelado"; o.motivoCancel=motivo;
   if(/document|idade/i.test(motivo)){ o.docConferido=false; o.entregaAutorizada=false; }
-  logMove(o,de,"cancelado"); refresh();
+  logMove(o,de,"cancelado"); refresh(); sbPatchOrder(o);
   const msg=waMsg("cancelado",o);
   openModal("Pedido cancelado",
     `<div class="od-items" style="white-space:pre-line;color:#dcdcdc">${msg}</div>`,
@@ -838,7 +866,7 @@ VIEWS.entregas=function(){
 };
 function setDelivery(id,status){ const d=DB.deliveries.find(x=>x.id===id); d.status=status;
   const o=DB.orders.find(o=>o.numero===d.pedidoNum);
-  if(o){ if(status==="Entregue"&&o.status!=="entregue"){ logMove(o,o.status,"entregue"); o.status="entregue"; } }
+  if(o){ if(status==="Entregue"&&o.status!=="entregue"){ logMove(o,o.status,"entregue"); o.status="entregue"; sbPatchOrder(o); } }
   store.save(); toast("Entrega: "+status); renderSidebar(); }
 function assignDriver(id){ const d=DB.deliveries.find(x=>x.id===id);
   openModal("Atribuir entregador",`${pField("Nome do entregador","dv_name",d.entregador)}`,
@@ -969,16 +997,18 @@ function saveManualOrder(){
     bairro:g("no_bairro").value.trim(),pagamento:g("no_pag").value,troco:"",itens:[{n:g("no_itens").value.trim()||"Itens diversos",q:1,p:Math.max(0,total-taxa)}],
     subtotal:Math.max(0,total-taxa),taxa,total,obs:g("no_obs").value.trim(),status:"novo",maioridade:true,docConferido:null,entregaAutorizada:null,
     motivoCancel:"",entregador:"",criadoEm:nowISO(),historico:[{ts:nowISO(),de:null,para:"novo",user:OP||"admin (manual)"}]};
-  DB.orders.unshift(o); refresh(); go("pedidos"); toast("Pedido #"+o.numero+" criado no kanban.");
+  DB.orders.unshift(o); if(sbActive()){ sbPostOrder(o).then(function(rows){ if(rows&&rows[0]&&rows[0].id){ o.id=rows[0].id; store.save(); } }); } refresh(); go("pedidos"); toast("Pedido #"+o.numero+" criado no kanban.");
 }
 
 /* ============================================================
    INIT
    ============================================================ */
 function boot(){
-  if(DB.settings.supabaseUrl){ CONFIG.supabaseUrl=DB.settings.supabaseUrl; CONFIG.supabaseKey=DB.settings.supabaseKey; }
+  if(sbActive()){ CONFIG.supabaseUrl=SUPA_ADMIN.url; CONFIG.supabaseKey=SUPA_ADMIN.key; }
+  else if(DB.settings.supabaseUrl){ CONFIG.supabaseUrl=DB.settings.supabaseUrl; CONFIG.supabaseKey=DB.settings.supabaseKey; }
   document.getElementById("liveLabel").textContent=CONFIG.supabaseUrl?"supabase":"demo";
   CURRENT="dashboard"; renderSidebar(); VIEWS.dashboard();
+  if(sbActive()){ sbSyncOrders().then(function(){ if(CURRENT==="dashboard") VIEWS.dashboard(); }); sbStartPolling(); }
 }
 (function init(){
   store.load();
