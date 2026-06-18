@@ -980,11 +980,25 @@ function saveSupa(){ CONFIG.supabaseUrl=document.getElementById("sb_url").value.
 /* ============================================================
    PEDIDO MANUAL
    ============================================================ */
+function buscaCep(v){
+  var cep=(v||"").replace(/\D/g,"");
+  if(cep.length!==8) return;
+  fetch("https://viacep.com.br/ws/"+cep+"/json/").then(function(r){return r.json();}).then(function(d){
+    if(!d || d.erro){ toast("CEP n\u00e3o encontrado."); return; }
+    var end=document.getElementById("no_end"), bai=document.getElementById("no_bairro");
+    if(end && d.logradouro) end.value=d.logradouro;
+    if(bai && d.bairro) bai.value=d.bairro;
+    var num=document.getElementById("no_num"); if(num) num.focus();
+    toast("Endere\u00e7o preenchido pelo CEP: "+(d.localidade||"")+"/"+(d.uf||""));
+  }).catch(function(){ toast("Erro ao buscar CEP."); });
+}
 function newOrderModal(){
   openModal("Pedido manual",
     `${pField("Cliente","no_nome","")}
-     <div class="ff2"><div>${pField("WhatsApp","no_wpp","")}</div><div>${pField("Bairro","no_bairro","")}</div></div>
-     ${pField("Endereço","no_end","")}
+     ${pField("WhatsApp","no_wpp","")}
+     <div class="ff2"><div><label class="f">CEP</label><input class="inp" id="no_cep" inputmode="numeric" maxlength="9" placeholder="00000-000" oninput="buscaCep(this.value)"/></div><div>${pField("Número","no_num","")}</div></div>
+     ${pField("Endereço (rua)","no_end","")}
+     ${pField("Bairro","no_bairro","")}
      <div class="ff2"><div><label class="f">Pagamento</label><select class="inp" id="no_pag">${PAGAMENTOS.map(p=>`<option>${p}</option>`).join("")}</select></div><div>${pField("Total (R$)","no_total","","number")}</div></div>
      ${pField("Itens (texto livre)","no_itens","","text","2x Heineken, 1x Gelo...")}
      ${pField("Observações","no_obs","")}`,
@@ -993,7 +1007,7 @@ function newOrderModal(){
 function saveManualOrder(){
   const g=x=>document.getElementById(x); const nome=g("no_nome").value.trim(); if(!nome){toast("Informe o cliente.");return;}
   const total=parseFloat(g("no_total").value)||0; const taxa=DB.settings.taxa||7;
-  const o={id:uid("o"),numero:pad4(DB.seq++),cliente:nome,whatsapp:g("no_wpp").value.trim(),endereco:g("no_end").value.trim(),
+  const o={id:uid("o"),numero:pad4(DB.seq++),cliente:nome,whatsapp:g("no_wpp").value.trim(),endereco:(g("no_end").value.trim()+(g("no_num")&&g("no_num").value.trim()?", "+g("no_num").value.trim():"")),
     bairro:g("no_bairro").value.trim(),pagamento:g("no_pag").value,troco:"",itens:[{n:g("no_itens").value.trim()||"Itens diversos",q:1,p:Math.max(0,total-taxa)}],
     subtotal:Math.max(0,total-taxa),taxa,total,obs:g("no_obs").value.trim(),status:"novo",maioridade:true,docConferido:null,entregaAutorizada:null,
     motivoCancel:"",entregador:"",criadoEm:nowISO(),historico:[{ts:nowISO(),de:null,para:"novo",user:OP||"admin (manual)"}]};
