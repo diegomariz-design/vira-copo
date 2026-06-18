@@ -375,11 +375,15 @@ function seed(){
   const settings=Object.assign({},CONFIG.loja,{
     msgPadrao:"Olá! Aqui é da Vira Copo Delivery 🍻", aviso18:"Venda apenas para maiores de 18 anos. Documento com foto exigido na entrega.",
     politicaEntrega:"Entregamos nos bairros atendidos. Documento obrigatório no recebimento."});
-  return {seq, products, customers, orders, deliveries, coupons, settings};
+  const drivers=[
+    {id:uid("dr"),nome:"Marcos Silva",whatsapp:"(16) 98111-2222",cpf:"",motoModelo:"Honda CG 160",motoPlaca:"ABC1D23",motoCor:"Vermelha",cnhImg:"",contratoFile:"",contratoNome:"",ativo:true,obs:""},
+    {id:uid("dr"),nome:"Júlia Costa",whatsapp:"(16) 98333-4444",cpf:"",motoModelo:"Yamaha Factor 150",motoPlaca:"XYZ4E56",motoCor:"Preta",cnhImg:"",contratoFile:"",contratoNome:"",ativo:true,obs:""},
+  ];
+  return {seq, products, customers, orders, deliveries, coupons, settings, drivers};
 }
 
 const store = {
-  load(){ try{ DB=JSON.parse(localStorage.getItem(SKEY)); }catch(e){ DB=null; } if(!DB){ DB=seed(); store.save(); } window.DB=DB; return DB; },
+  load(){ try{ DB=JSON.parse(localStorage.getItem(SKEY)); }catch(e){ DB=null; } if(!DB){ DB=seed(); store.save(); } if(!Array.isArray(DB.drivers)){ DB.drivers=seed().drivers; store.save(); } window.DB=DB; return DB; },
   save(){ try{ localStorage.setItem(SKEY, JSON.stringify(DB)); }catch(e){} },
   reset(){ localStorage.removeItem(SKEY); DB=seed(); store.save(); window.DB=DB; },
 };
@@ -421,6 +425,7 @@ const NAV=[
   {key:"cardapio",  label:"Cardápio",          ic:"🍾"},
   {key:"clientes",  label:"Clientes",          ic:"👥"},
   {key:"entregas",  label:"Entregas",          ic:"🛵"},
+  {key:"entregadores",label:"Entregadores",   ic:"🏍️"},
   {key:"cupons",    label:"Cupons / Promoções", ic:"🏷️"},
   {key:"financeiro",label:"Financeiro",        ic:"💰"},
   {key:"config",    label:"Configurações",     ic:"⚙️"},
@@ -880,7 +885,9 @@ VIEWS.entregas=function(){
   const list=DB.deliveries.filter(d=>!SEARCH||(d.pedidoNum+" "+d.bairro+" "+d.entregador).toLowerCase().includes(SEARCH));
   const head=`<div class="page-head"><div class="filters">
     <input placeholder="Buscar pedido, bairro, entregador..." oninput="SEARCH=this.value.toLowerCase();VIEWS.entregas()" value="${SEARCH||""}"/>
-    </div></div>`;
+    </div><div class="sp"></div>
+    <button class="btn btn-gold btn-sm" onclick="go('entregadores')">🏍️ Entregadores</button>
+    <button class="btn btn-red btn-sm" onclick="dispatchModal()">📤 Despachar rota</button></div>`;
   const rows=list.map(d=>`<tr>
     <td><b>#${d.pedidoNum}</b></td><td>${d.endereco}<div style="font-size:11px;color:var(--cinza2)">${d.bairro}</div></td>
     <td>${d.entregador||'<span style="color:var(--cinza2)">não atribuído</span>'}</td>
@@ -903,6 +910,90 @@ function assignDriver(id){ const d=DB.deliveries.find(x=>x.id===id);
     `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-red" onclick="saveDriver('${id}')">Salvar</button>`); }
 function saveDriver(id){ const d=DB.deliveries.find(x=>x.id===id); d.entregador=document.getElementById("dv_name").value.trim();
   const o=DB.orders.find(o=>o.numero===d.pedidoNum); if(o)o.entregador=d.entregador; closeModal(); refresh(); VIEWS.entregas(); toast("Entregador atribuído."); }
+
+/* ============================================================
+   ENTREGADORES (cadastro + documentos) + DESPACHO DE ROTA
+   ============================================================ */
+let IMGS={};
+function imgSlot(key,label,cur){ IMGS[key]=cur||"";
+  return `<label class="f">${label}</label><div style="display:flex;gap:10px;align-items:center;margin-bottom:2px">
+    <img id="prev_${key}" src="${IMGS[key]}" style="width:54px;height:54px;border-radius:10px;object-fit:cover;border:1px solid var(--borda2);background:var(--card2);${IMGS[key]?"":"display:none"}"/>
+    <input type="file" accept="image/*" id="in_${key}" onchange="pickImg('${key}',this)" style="font-size:12px;color:var(--cinza)"/>
+    <button class="btn btn-ghost btn-sm" type="button" id="clr_${key}" onclick="clearImg('${key}')" style="${IMGS[key]?"":"display:none"}">✕</button></div>`; }
+function pickImg(key,input){ var fl=input.files&&input.files[0]; if(!fl)return; var rd=new FileReader();
+  rd.onload=function(e){ var img=new Image(); img.onload=function(){ var mx=640,sc=Math.min(1,mx/Math.max(img.width,img.height));
+    var cv=document.createElement("canvas"); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+    cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height); IMGS[key]=cv.toDataURL("image/jpeg",0.7);
+    var pv=document.getElementById("prev_"+key); if(pv){pv.src=IMGS[key];pv.style.display="";} var cl=document.getElementById("clr_"+key); if(cl)cl.style.display=""; }; img.src=e.target.result; }; rd.readAsDataURL(fl); }
+function clearImg(key){ IMGS[key]=""; var pv=document.getElementById("prev_"+key); if(pv){pv.src="";pv.style.display="none";} var cl=document.getElementById("clr_"+key); if(cl)cl.style.display="none"; var inp=document.getElementById("in_"+key); if(inp)inp.value=""; }
+function fileSlot(key,label,cur,curName){ IMGS[key]=cur||""; IMGS[key+"_n"]=curName||"";
+  return `<label class="f">${label}</label><div style="display:flex;gap:10px;align-items:center;margin-bottom:2px">
+    <input type="file" accept=".pdf,image/*" id="in_${key}" onchange="pickFile('${key}',this)" style="font-size:12px;color:var(--cinza)"/>
+    <a id="lnk_${key}" href="${IMGS[key]||'#'}" target="_blank" class="btn btn-ghost btn-sm" style="${IMGS[key]?"":"display:none"}">📄 ${IMGS[key+"_n"]||"ver"}</a>
+    <button class="btn btn-ghost btn-sm" type="button" id="clrf_${key}" onclick="clearFile('${key}')" style="${IMGS[key]?"":"display:none"}">✕</button></div>`; }
+function pickFile(key,input){ var fl=input.files&&input.files[0]; if(!fl)return; var rd=new FileReader();
+  rd.onload=function(e){ IMGS[key]=e.target.result; IMGS[key+"_n"]=fl.name; var ln=document.getElementById("lnk_"+key); if(ln){ln.href=IMGS[key];ln.textContent="📄 "+fl.name;ln.style.display="";} var cl=document.getElementById("clrf_"+key); if(cl)cl.style.display=""; toast("Anexado: "+fl.name); }; rd.readAsDataURL(fl); }
+function clearFile(key){ IMGS[key]="";IMGS[key+"_n"]=""; var ln=document.getElementById("lnk_"+key); if(ln)ln.style.display="none"; var cl=document.getElementById("clrf_"+key); if(cl)cl.style.display="none"; var inp=document.getElementById("in_"+key); if(inp)inp.value=""; }
+
+VIEWS.entregadores=function(){
+  const list=DB.drivers.filter(d=>!SEARCH||(d.nome+" "+d.whatsapp+" "+(d.motoPlaca||"")).toLowerCase().includes(SEARCH));
+  const head=`<div class="page-head"><div class="filters"><input placeholder="Buscar entregador..." oninput="SEARCH=this.value.toLowerCase();VIEWS.entregadores()" value="${SEARCH||""}"/></div><div class="sp"></div><button class="btn btn-red btn-sm" onclick="driverModal()">+ Entregador</button></div>`;
+  const rows=list.map(d=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:10px">${d.cnhImg?`<img src="${d.cnhImg}" style="width:42px;height:42px;border-radius:9px;object-fit:cover;border:1px solid var(--borda2)"/>`:`<div style="width:42px;height:42px;border-radius:9px;background:var(--card2);display:grid;place-items:center;font-size:18px">🏍️</div>`}<div><b>${d.nome}</b> ${d.ativo?"":'<span class="pill off">inativo</span>'}<div style="font-size:11px;color:var(--cinza2)">${d.whatsapp}</div></div></div></td>
+    <td>${d.motoModelo||"—"}<div style="font-size:11px;color:var(--cinza2)">${d.motoPlaca||""} ${d.motoCor||""}</div></td>
+    <td>${d.cnhImg?'<span class="pill on">CNH ✓</span>':'<span class="pill muted">sem CNH</span>'}</td>
+    <td>${d.contratoFile?`<a class="pill on" href="${d.contratoFile}" target="_blank">📄 contrato</a>`:'<span class="pill muted">sem contrato</span>'}</td>
+    <td><div class="row-actions"><button class="btn btn-ghost btn-sm" onclick="driverModal('${d.id}')">Editar</button><button class="btn btn-wa btn-sm" onclick="window.open(waLink('${d.whatsapp}',''),'_blank')">💬</button></div></td></tr>`).join("")||'<tr><td colspan="5" class="empty-st">Nenhum entregador. Clique em + Entregador.</td></tr>';
+  document.getElementById("content").innerHTML=head+`<div class="t-wrap"><div class="t-scroll"><table><thead><tr><th>Entregador</th><th>Moto</th><th>CNH</th><th>Contrato</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+};
+function driverModal(id){
+  const d=id?DB.drivers.find(x=>x.id===id):{nome:"",whatsapp:"",cpf:"",motoModelo:"",motoPlaca:"",motoCor:"",cnhImg:"",contratoFile:"",contratoNome:"",ativo:true,obs:""};
+  const body=`
+    ${pField("Nome completo","dr_nome",d.nome)}
+    <div class="ff2"><div>${pField("WhatsApp","dr_wpp",d.whatsapp,"text","(16) 9...")}</div><div>${pField("CPF","dr_cpf",d.cpf)}</div></div>
+    <div class="ff3"><div>${pField("Moto (modelo)","dr_moto",d.motoModelo)}</div><div>${pField("Placa","dr_placa",d.motoPlaca)}</div><div>${pField("Cor","dr_cor",d.motoCor)}</div></div>
+    ${imgSlot("cnh","Carteira de motorista (CNH) — foto",d.cnhImg)}
+    ${fileSlot("contrato","Contrato de prestação de serviço (PDF ou foto)",d.contratoFile,d.contratoNome)}
+    ${pField("Observações","dr_obs",d.obs)}
+    <label class="switch"><input type="checkbox" id="dr_ativo" ${d.ativo?"checked":""}/> Entregador ativo</label>`;
+  openModal(id?"Editar entregador":"Novo entregador", body,
+    `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-red" onclick="saveDriver2('${id||""}')">Salvar</button>`);
+}
+function saveDriver2(id){ const g=x=>document.getElementById(x);
+  const data={nome:g("dr_nome").value.trim(),whatsapp:g("dr_wpp").value.trim(),cpf:g("dr_cpf").value.trim(),
+    motoModelo:g("dr_moto").value.trim(),motoPlaca:g("dr_placa").value.trim(),motoCor:g("dr_cor").value.trim(),
+    cnhImg:IMGS["cnh"]||"",contratoFile:IMGS["contrato"]||"",contratoNome:IMGS["contrato_n"]||"",obs:g("dr_obs").value.trim(),ativo:g("dr_ativo").checked};
+  if(!data.nome){toast("Informe o nome.");return;}
+  if(id){Object.assign(DB.drivers.find(x=>x.id===id),data);}else{DB.drivers.push(Object.assign({id:uid("dr")},data));}
+  closeModal(); refresh(); toast("Entregador salvo.");
+}
+function groupByBairro(orders){ const g={}; orders.forEach(o=>{ const b=(o.bairro||"Sem bairro").trim()||"Sem bairro"; (g[b]=g[b]||[]).push(o); }); return g; }
+function routePreview(orders){ const g=groupByBairro(orders); let h="",n=0;
+  Object.keys(g).sort().forEach(b=>{ h+=`<div style="margin-top:8px;color:var(--ouro);font-weight:800">📍 ${b}</div>`;
+    g[b].forEach(o=>{ n++; h+=`<div class="it"><span>${n}) #${o.numero} · ${o.cliente}<div style="font-size:11px;color:var(--cinza2)">${o.endereco}</div></span><span>${brl(o.total)}<div style="font-size:11px;color:var(--cinza2);text-align:right">${o.pagamento}</div></span></div>`; }); });
+  return h; }
+function buildRouteMsg(driver,orders){ const g=groupByBairro(orders); let n=0;
+  let msg=`🛵 *ROTA DE ENTREGA — Vira Copo*\nEntregador: ${driver.nome}\n${orders.length} ${orders.length>1?"entregas":"entrega"} · agrupadas por bairro\n`;
+  Object.keys(g).sort().forEach(b=>{ msg+=`\n📍 *${b.toUpperCase()}*\n`;
+    g[b].forEach(o=>{ n++; msg+=`${n}) #${o.numero} — ${o.endereco}\n   ${o.cliente} · ${o.pagamento} · ${brl(o.total)}\n   Itens: ${o.itens.map(i=>i.q+"x "+i.n).join(", ")}\n`; }); });
+  msg+=`\n🪪 Exigir documento com foto (+18) na entrega.`; return msg; }
+function dispatchModal(){
+  const ativos=DB.drivers.filter(d=>d.ativo);
+  if(!ativos.length){ toast("Cadastre um entregador primeiro."); go("entregadores"); return; }
+  const pend=DB.orders.filter(o=>o.status==="entrega");
+  const body=`<label class="f">Entregador</label>
+    <select class="inp" id="dp_driver">${ativos.map(d=>`<option value="${d.id}">${d.nome}${d.motoPlaca?" — "+d.motoPlaca:""}</option>`).join("")}</select>
+    <label class="f">Pedidos para entrega (${pend.length}) — agrupados por bairro</label>
+    <div class="od-items">${pend.length?routePreview(pend):'<div style="color:var(--cinza2)">Nenhum pedido com status "Saiu para entrega". Mova pedidos pra essa coluna no kanban.</div>'}</div>`;
+  openModal("📤 Despachar rota", body,
+    `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button><button class="btn btn-wa" onclick="sendRoute()" ${pend.length?"":"disabled"}>💬 Enviar rota no WhatsApp</button>`);
+}
+function sendRoute(){ const id=document.getElementById("dp_driver").value; const driver=DB.drivers.find(d=>d.id===id);
+  const pend=DB.orders.filter(o=>o.status==="entrega"); if(!pend.length){toast("Sem pedidos pra despachar.");return;}
+  pend.forEach(o=>{ o.entregador=driver.nome; if(typeof sbPatchOrder==="function") sbPatchOrder(o); }); store.save();
+  window.open(waLink(driver.whatsapp,buildRouteMsg(driver,pend)),"_blank");
+  closeModal(); toast("Rota enviada para "+driver.nome+".");
+}
 
 /* ============================================================
    CUPONS / PROMOÇÕES
