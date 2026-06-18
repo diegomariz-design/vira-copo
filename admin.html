@@ -205,7 +205,7 @@
   <div class="login-card">
     <div class="login-logo">VIRA<span class="neon">COPO</span></div>
     <div class="login-sub">Painel Administrativo</div>
-    <input class="who" id="loginEmail" type="email" placeholder="E-mail" autocomplete="username" />
+    <input class="who" id="loginUser" type="text" placeholder="Usuário" autocomplete="username" />
     <input class="who" id="loginPass" type="password" placeholder="Senha" autocomplete="current-password" />
     <button class="login-btn" onclick="doLogin()">Entrar</button>
     <div class="login-err" id="loginErr"></div>
@@ -255,6 +255,8 @@ const CONFIG = {
   supabaseUrl: "",
   supabaseKey: "",
   pin: "2580",
+  adminUser: "admin",
+  adminPass: "151010",
   loja: {
     nome:"Vira Copo Delivery", whatsapp:"5516992058378",
     endereco:"Rua da Adega, 100 - Centro", horario:"18h - 02h (todos os dias)",
@@ -433,25 +435,18 @@ const NAV=[
 const TITLES=Object.fromEntries(NAV.map(n=>[n.key,n.label]));
 
 function doLogin(){
-  const email=(document.getElementById("loginEmail").value||"").trim();
-  const pass=document.getElementById("loginPass").value||"";
+  const u=(document.getElementById("loginUser").value||"").trim();
+  const p=document.getElementById("loginPass").value||"";
   const err=document.getElementById("loginErr");
-  if(!email||!pass){ err.textContent="Informe e-mail e senha."; return; }
-  err.style.color=""; err.textContent="Entrando...";
-  fetch(SUPA_ADMIN.url+"/auth/v1/token?grant_type=password",{method:"POST",
-    headers:{apikey:SUPA_ADMIN.key,"Content-Type":"application/json"},
-    body:JSON.stringify({email:email,password:pass})})
-  .then(function(r){return r.json();}).then(function(dt){
-    if(dt && dt.access_token){
-      OP=(dt.user&&dt.user.user_metadata&&dt.user.user_metadata.nome)||email.split("@")[0];
-      try{ localStorage.setItem("viracopo_session",JSON.stringify({email:email,op:OP,token:dt.access_token})); }catch(e){}
-      document.getElementById("login").style.display="none";
-      document.getElementById("shell").classList.add("on");
-      boot();
-    } else {
-      err.textContent = dt.error_description || dt.msg || "E-mail ou senha inválidos.";
-    }
-  }).catch(function(){ err.textContent="Erro de conexão. Tente novamente."; });
+  if(u===CONFIG.adminUser && p===CONFIG.adminPass){
+    OP=u;
+    try{ localStorage.setItem("viracopo_session",JSON.stringify({op:u})); }catch(e){}
+    document.getElementById("login").style.display="none";
+    document.getElementById("shell").classList.add("on");
+    boot();
+  } else {
+    err.textContent="Usuário ou senha incorretos.";
+  }
 }
 function logout(){ localStorage.removeItem("viracopo_session"); localStorage.removeItem("viracopo_op"); location.reload(); }
 
@@ -1159,7 +1154,7 @@ function boot(){
 (function init(){
   store.load();
   let sess=null; try{ sess=JSON.parse(localStorage.getItem("viracopo_session")); }catch(e){}
-  if(sess && sess.email){ OP=sess.op||(sess.email||"").split("@")[0]; document.getElementById("login").style.display="none"; document.getElementById("shell").classList.add("on"); boot(); }
+  if(sess && sess.op){ OP=sess.op; document.getElementById("login").style.display="none"; document.getElementById("shell").classList.add("on"); boot(); }
   const pf=document.getElementById("loginPass"); if(pf) pf.addEventListener("keydown",function(e){ if(e.key==="Enter") doLogin(); });
 })();
 </script>
