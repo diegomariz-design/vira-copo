@@ -381,11 +381,12 @@ function seed(){
     {id:uid("dr"),nome:"Marcos Silva",whatsapp:"(16) 98111-2222",cpf:"",motoModelo:"Honda CG 160",motoPlaca:"ABC1D23",motoCor:"Vermelha",cnhImg:"",contratoFile:"",contratoNome:"",ativo:true,obs:""},
     {id:uid("dr"),nome:"Júlia Costa",whatsapp:"(16) 98333-4444",cpf:"",motoModelo:"Yamaha Factor 150",motoPlaca:"XYZ4E56",motoCor:"Preta",cnhImg:"",contratoFile:"",contratoNome:"",ativo:true,obs:""},
   ];
-  return {seq, products, customers, orders, deliveries, coupons, settings, drivers};
+  const categories=CATEGORIES.slice();
+  return {seq, products, customers, orders, deliveries, coupons, settings, drivers, categories};
 }
 
 const store = {
-  load(){ try{ DB=JSON.parse(localStorage.getItem(SKEY)); }catch(e){ DB=null; } if(!DB){ DB=seed(); store.save(); } if(!Array.isArray(DB.drivers)){ DB.drivers=seed().drivers; store.save(); } window.DB=DB; return DB; },
+  load(){ try{ DB=JSON.parse(localStorage.getItem(SKEY)); }catch(e){ DB=null; } if(!DB){ DB=seed(); store.save(); } if(!Array.isArray(DB.drivers)){ DB.drivers=seed().drivers; store.save(); } if(!Array.isArray(DB.categories)){ DB.categories=CATEGORIES.slice(); store.save(); } window.DB=DB; return DB; },
   save(){ try{ localStorage.setItem(SKEY, JSON.stringify(DB)); }catch(e){} },
   reset(){ localStorage.removeItem(SKEY); DB=seed(); store.save(); window.DB=DB; },
 };
@@ -725,8 +726,9 @@ VIEWS.cardapio=function(){
   const head=`<div class="page-head">
     <div class="filters">
       <input placeholder="Buscar produto..." oninput="SEARCH=this.value.toLowerCase();VIEWS.cardapio()" value="${SEARCH||""}"/>
-      <select onchange="window._fCat=this.value;VIEWS.cardapio()"><option value="">Categoria: todas</option>${CATEGORIES.map(c=>`<option ${fc===c?"selected":""}>${c}</option>`).join("")}</select>
+      <select onchange="window._fCat=this.value;VIEWS.cardapio()"><option value="">Categoria: todas</option>${DB.categories.map(c=>`<option ${fc===c?"selected":""}>${c}</option>`).join("")}</select>
     </div><div class="sp"></div>
+    <button class="btn btn-ghost btn-sm" onclick="categoriesModal()">🏷️ Categorias</button>
     <button class="btn btn-gold btn-sm" onclick="comboModal()">+ Combo</button>
     <button class="btn btn-red btn-sm" onclick="productModal()">+ Produto</button></div>`;
   const rows=list.map(p=>`<tr>
@@ -744,6 +746,34 @@ VIEWS.cardapio=function(){
     <thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Estoque</th><th>Status</th><th>Ações</th></tr></thead>
     <tbody>${rows}</tbody></table></div></div>`;
 };
+function categoriesModal(){
+  openModal("🏷️ Categorias do cardápio",
+    `<p style="font-size:12.5px;color:var(--cinza2);margin:0 0 8px">Renomear atualiza os produtos daquela categoria. Excluir não apaga os produtos.</p>
+     <div id="catList">${renderCatList()}</div>
+     <label class="f">Nova categoria</label>
+     <div style="display:flex;gap:8px"><input class="inp" id="newCat" placeholder="Ex: Whiskies" onkeydown="if(event.key==='Enter')addCat()"/><button class="btn btn-red btn-sm" onclick="addCat()">Adicionar</button></div>`,
+    `<button class="btn btn-ghost btn-sm" onclick="closeModal();VIEWS.cardapio()">Fechar</button>`);
+}
+function renderCatList(){
+  if(!DB.categories.length) return '<div class="empty-st" style="padding:14px">Nenhuma categoria.</div>';
+  return DB.categories.map(function(c,i){
+    var n=DB.products.filter(function(p){return p.categoria===c;}).length;
+    return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--borda2)">'+
+      '<input class="inp" style="flex:1;padding:8px" value="'+c.replace(/"/g,"&quot;")+'" onchange="renameCat('+i+',this.value)"/>'+
+      '<span style="font-size:11px;color:var(--cinza2);min-width:58px;text-align:right">'+n+' prod.</span>'+
+      '<button class="btn btn-ghost btn-sm" onclick="delCat('+i+')">✕</button></div>';
+  }).join("");
+}
+function addCat(){ var v=(document.getElementById("newCat").value||"").trim(); if(!v)return;
+  if(DB.categories.indexOf(v)>=0){ toast("Categoria já existe."); return; }
+  DB.categories.push(v); store.save(); document.getElementById("catList").innerHTML=renderCatList(); document.getElementById("newCat").value=""; toast("Categoria adicionada."); }
+function renameCat(i,v){ v=(v||"").trim(); if(!v)return; var old=DB.categories[i]; if(v===old)return;
+  if(DB.categories.indexOf(v)>=0){ toast("Já existe categoria com esse nome."); document.getElementById("catList").innerHTML=renderCatList(); return; }
+  DB.categories[i]=v; DB.products.forEach(function(p){ if(p.categoria===old) p.categoria=v; }); store.save();
+  document.getElementById("catList").innerHTML=renderCatList(); toast("Renomeada (produtos atualizados)."); }
+function delCat(i){ var c=DB.categories[i]; var n=DB.products.filter(function(p){return p.categoria===c;}).length;
+  if(n>0 && !confirm('"'+c+'" tem '+n+' produto(s). Excluir a categoria? Os produtos continuam, mas sem essa categoria.')) return;
+  DB.categories.splice(i,1); store.save(); document.getElementById("catList").innerHTML=renderCatList(); toast("Categoria excluída."); }
 function pField(l,id,v,t="text",ph=""){ return `<label class="f">${l}</label><input class="inp" id="${id}" type="${t}" value="${v??""}" placeholder="${ph}"/>`; }
 let IMG_TMP="";
 function imgField(cur){ IMG_TMP=cur||"";
@@ -779,7 +809,7 @@ function productModal(id){
     ${pField("Nome do produto","p_nome",p.nome)}
     ${imgField(p.imagem)}
     <div class="ff2">
-      <div><label class="f">Categoria</label><select class="inp" id="p_cat">${CATEGORIES.map(c=>`<option ${p.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
+      <div><label class="f">Categoria</label><select class="inp" id="p_cat">${DB.categories.map(c=>`<option ${p.categoria===c?"selected":""}>${c}</option>`).join("")}</select></div>
       <div>${pField("Embalagem","p_emb",p.embalagem,"text","un / lata / 2L")}</div>
     </div>
     ${pField("Descrição","p_desc",p.descricao,"text","330ml gelada...")}
