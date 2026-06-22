@@ -823,9 +823,12 @@ function productModal(id){
     <label class="switch"><input type="checkbox" id="p_ativo" ${p.ativo?"checked":""}/> Produto ativo</label>
     <label class="switch"><input type="checkbox" id="p_dest" ${p.destaque?"checked":""}/> Destaque na home</label>`;
   openModal(id?"Editar produto":"Novo produto", body,
-    `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
+    `${id?`<button class="btn btn-ghost btn-sm" style="color:#ff7a7a;border-color:rgba(255,80,80,.4)" onclick="delProduct('${id}')">🗑️ Excluir</button>`:""}<button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-red" onclick="saveProduct('${id||""}')">Salvar</button>`);
 }
+function delProduct(id){ var p=DB.products.find(function(x){return x.id===id;}); if(!p)return;
+  if(!confirm('Excluir o produto "'+p.nome+'"? Essa ação não pode ser desfeita.')) return;
+  DB.products=DB.products.filter(function(x){return x.id!==id;}); store.save(); closeModal(); refresh(); toast("Produto excluído."); }
 function saveProduct(id){
   const g=x=>document.getElementById(x);
   const data={nome:g("p_nome").value.trim(),categoria:g("p_cat").value,descricao:g("p_desc").value.trim(),
