@@ -662,12 +662,14 @@ function setStatus(id,status){
   const de=o.status; o.status=status; logMove(o,de,status); refresh(); sbPatchOrder(o);
   // mensagem de WhatsApp pronta
   const msg=waMsg(status,o);
+  const auto=evoConfigured();
+  if(auto){ sendEvolution(o.whatsapp,msg); }
   openModal(`Status → ${ST[status].label}`,
-    `<p style="color:var(--cinza);font-size:13px">Mensagem pronta para enviar ao cliente <b style="color:#fff">${o.cliente}</b>:</p>
+    `<p style="color:var(--cinza);font-size:13px">${auto?"📲 Mensagem enviada automaticamente para":"Mensagem pronta para enviar ao cliente"} <b style="color:#fff">${o.cliente}</b>:</p>
      <div class="od-items" style="white-space:pre-line;color:#dcdcdc">${msg}</div>`,
     `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button>
-     <button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Enviar no WhatsApp</button>`);
-  toast("Status atualizado e registrado.");
+     ${auto?"":`<button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Enviar no WhatsApp</button>`}`);
+  toast(auto?"Status atualizado · WhatsApp enviado automático.":"Status atualizado e registrado.");
 }
 function setDoc(id,v){ const o=DB.orders.find(x=>x.id===id); o.docConferido=v; if(v===false){o.entregaAutorizada=false;} store.save(); sbPatchOrder(o); orderModal(id); toast("Documento atualizado."); }
 function setAuth(id){ const o=DB.orders.find(x=>x.id===id); o.entregaAutorizada=!o.entregaAutorizada; store.save(); sbPatchOrder(o); orderModal(id); }
@@ -696,11 +698,13 @@ function confirmCancel(id){
   if(/document|idade/i.test(motivo)){ o.docConferido=false; o.entregaAutorizada=false; }
   logMove(o,de,"cancelado"); refresh(); sbPatchOrder(o);
   const msg=waMsg("cancelado",o);
+  const auto=evoConfigured();
+  if(auto){ sendEvolution(o.whatsapp,msg); }
   openModal("Pedido cancelado",
     `<div class="od-items" style="white-space:pre-line;color:#dcdcdc">${msg}</div>`,
     `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button>
-     <button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Avisar cliente</button>`);
-  toast("Pedido cancelado e registrado.");
+     ${auto?"":`<button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Avisar cliente</button>`}`);
+  toast(auto?"Pedido cancelado · cliente avisado automático.":"Pedido cancelado e registrado.");
 }
 function printSep(id){
   const o=DB.orders.find(x=>x.id===id);
@@ -1126,6 +1130,15 @@ VIEWS.config=function(){
         <button class="btn btn-ghost btn-sm" onclick="saveSupa()">Salvar chaves</button>
         <button class="btn btn-ghost btn-sm" onclick="if(confirm('Recarregar dados de demonstração? Isso apaga as alterações locais.')){store.reset();refresh();toast('Dados demo recarregados.');}">↺ Resetar dados demo</button>
       </div>
+    </div>
+    <div class="panel" style="margin-top:16px"><h3>🟢 WhatsApp automático (Evolution API) <span class="mut">${evoConfigured()?"ativo":"manual"}</span></h3>
+      <p style="font-size:12.5px;color:var(--cinza);margin:0 0 8px">Cole os dados da sua instância da Evolution API. Com isso preenchido, as mensagens de status saem <b>automáticas</b> pro cliente (sem 1-toque).</p>
+      <div class="ff3"><div>${pField("Evolution URL","ev_url",(DB.settings.evolution||{}).url,"text","https://sua-evolution.up.railway.app")}</div><div>${pField("API Key","ev_key",(DB.settings.evolution||{}).key)}</div><div>${pField("Instância","ev_inst",(DB.settings.evolution||{}).instance,"text","viracopo")}</div></div>
+      <div class="row-actions" style="margin-top:12px">
+        <button class="btn btn-red btn-sm" onclick="saveEvolution()">Salvar Evolution</button>
+        <button class="btn btn-ghost btn-sm" onclick="testEvolution()">Testar envio</button>
+      </div>
+      <div style="font-size:11.5px;margin-top:8px" id="evStatus">${evoConfigured()?"🟢 Configurado — mensagens de status saem automáticas.":"⚪ Não configurado — usando envio manual (1-toque)."}</div>
     </div>`;
 };
 function saveSettings(){ const g=x=>document.getElementById(x); const s=DB.settings;
@@ -1133,6 +1146,25 @@ function saveSettings(){ const g=x=>document.getElementById(x); const s=DB.setti
   s.horario=g("s_hor").value; s.taxa=parseFloat(g("s_taxa").value)||0; s.minimo=parseFloat(g("s_min").value)||0;
   s.tempoMedio=g("s_tempo").value; s.bairros=g("s_bairros").value; s.msgPadrao=g("s_msg").value; s.aviso18=g("s_aviso").value; s.politicaEntrega=g("s_pol").value;
   Object.assign(CONFIG.loja,{nome:s.nome,whatsapp:s.whatsapp,tempoMedio:s.tempoMedio,msgPadrao:s.msgPadrao}); store.save(); toast("Configurações salvas."); }
+function evoConfigured(){ var e=(DB.settings&&DB.settings.evolution)||{}; return !!(e.url&&e.key&&e.instance); }
+function sendEvolution(number,text){
+  if(!evoConfigured()) return Promise.resolve({skipped:true});
+  var e=DB.settings.evolution;
+  return fetch(e.url.replace(/\/+$/,"")+"/message/sendText/"+encodeURIComponent(e.instance),{method:"POST",
+    headers:{apikey:e.key,"Content-Type":"application/json"},
+    body:JSON.stringify({number:String(number).replace(/\D/g,""),text:text})}).then(function(r){return r.json();});
+}
+function saveEvolution(){ var g=function(x){return document.getElementById(x);};
+  DB.settings.evolution={url:g("ev_url").value.trim(),key:g("ev_key").value.trim(),instance:g("ev_inst").value.trim()};
+  store.save(); toast(evoConfigured()?"Evolution salva — automático ativo.":"Salvo."); VIEWS.config(); }
+function testEvolution(){
+  if(!evoConfigured()){ toast("Preencha URL, API Key e Instância."); return; }
+  var num=(DB.settings.whatsapp||CONFIG.loja.whatsapp);
+  var el=document.getElementById("evStatus"); if(el) el.textContent="Enviando teste...";
+  sendEvolution(num,"✅ Teste Vira Copo: Evolution API conectada com sucesso! 🍻").then(function(r){
+    if(el) el.textContent=(r&&!r.error&&!r.skipped&&!r.status)?"🟢 Teste enviado! Confira o WhatsApp.":("⚠️ Resposta da Evolution: "+JSON.stringify(r).slice(0,140));
+  }).catch(function(){ if(el) el.textContent="⚠️ Falha de conexão (confira URL e o CORS da Evolution)."; });
+}
 function saveSupa(){ CONFIG.supabaseUrl=document.getElementById("sb_url").value.trim(); CONFIG.supabaseKey=document.getElementById("sb_key").value.trim();
   DB.settings.supabaseUrl=CONFIG.supabaseUrl; DB.settings.supabaseKey=CONFIG.supabaseKey; store.save();
   document.getElementById("liveLabel").textContent=CONFIG.supabaseUrl?"supabase":"demo"; toast(CONFIG.supabaseUrl?"Chaves salvas. Me avise para eu rodar o schema!":"Chaves limpas."); VIEWS.config(); }
