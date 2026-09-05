@@ -463,71 +463,16 @@
 /* ===================== CONFIG ===================== */
 const CONFIG = { whatsapp:"5516992058378", taxaEntrega:7.00, minPedido:25.00, aberto:true };
 const SUPA = { url:"https://kfzlwutztrjggxhxjlti.supabase.co", key:"sb_publishable_Czq5azHOD1SPGvvvcfWgAw_n_nH2VOk" };
-function sbInsertOrder(row){
-  if(!SUPA.url) return Promise.resolve();
-  return fetch(SUPA.url+"/rest/v1/orders",{method:"POST",
-    headers:{apikey:SUPA.key,Authorization:"Bearer "+SUPA.key,"Content-Type":"application/json",Prefer:"return=minimal"},
-    body:JSON.stringify(row)}).catch(function(e){console.warn("Supabase insert falhou:",e);});
-}
 
 /* ===================== CARDÁPIO =====================
    old = preço "de" · feat = destaque · tag = selo */
-const MENU = [
-  { cat:"Combos", emoji:"🥃", items:[
-    {n:"Combo White Horse", p:95.00, combo:true, gelo:4, feat:true, tag:"Combo", d:"1 White Horse + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Red Label", p:130.00, combo:true, gelo:4, feat:true, d:"1 Red Label + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Ballantine's", p:110.00, combo:true, gelo:4, d:"1 Ballantine's + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Chivas", p:170.00, combo:true, gelo:4, feat:true, tag:"Premium", d:"1 Chivas + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Gin Beefeater", p:125.00, combo:true, gelo:4, d:"1 Gin Beefeater + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Gin Beefeater Pink", p:135.00, combo:true, gelo:4, feat:true, d:"1 Gin Beefeater Pink + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Absolut", p:115.00, combo:true, gelo:4, d:"1 Absolut + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Orloff", p:55.00, combo:true, gelo:4, feat:true, tag:"Melhor preço", d:"1 Orloff + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-    {n:"Combo Smirnoff", p:65.00, combo:true, gelo:4, d:"1 Smirnoff + 1 Ice Fox 2L + 4 Gelo de Coco (escolha os sabores)"},
-  ]},
-  { cat:"Cervejas", emoji:"🍺", items:[
-    {n:"Heineken Long Neck", p:7.90, d:"330ml · gelada", feat:true, tag:"Mais pedida"},
-    {n:"Heineken Lata", p:5.90, d:"350ml · gelada"},
-    {n:"Budweiser Long Neck", p:6.50, d:"330ml · gelada"},
-    {n:"Corona Extra", p:8.90, old:10.90, feat:true, d:"330ml · com limão na medida"},
-    {n:"Stella Artois", p:5.50, d:"269ml · puro malte"},
-    {n:"Original 600ml", p:11.90, d:"garrafa retornável · pilsen"},
-    {n:"Brahma Duplo Malte Lata", p:5.20, d:"350ml · gelada"},
-  ]},
-  { cat:"Combos Gelados", emoji:"🧊", items:[
-    {n:"Pack 12 Heineken Lata", p:62.90, old:70.80, feat:true, tag:"Economize", d:"12x Heineken 350ml + 1 saco de gelo 2kg"},
-    {n:"Balde 6 Long Necks", p:44.90, old:52.00, feat:true, d:"6 long necks à escolha + gelo · pronto pra mesa"},
-    {n:"Kit Esquenta", p:89.90, old:104.00, d:"Vodka Smirnoff + 4 energéticos + gelo + limão"},
-  ]},
-  { cat:"Destilados", emoji:"🥃", items:[
-    {n:"Vodka Smirnoff", p:39.90, d:"998ml · garrafa"},
-    {n:"Whisky Red Label", p:99.90, old:115.00, feat:true, d:"1L · blended scotch"},
-    {n:"Gin Tanqueray", p:129.90, d:"750ml · London Dry"},
-    {n:"Cachaça 51", p:14.90, d:"965ml"},
-    {n:"Whisky Jack Daniel's", p:139.90, d:"1L · Tennessee whiskey"},
-  ]},
-  { cat:"Vinhos & Espumantes", emoji:"🍷", items:[
-    {n:"Vinho Tinto Reservado", p:34.90, d:"750ml · cabernet sauvignon"},
-    {n:"Espumante Brut", p:44.90, old:52.00, feat:true, d:"750ml · gelado, pronto pra comemorar"},
-    {n:"Vinho Rosé", p:39.90, d:"750ml · meio seco"},
-  ]},
-  { cat:"Sem álcool", emoji:"🥤", items:[
-    {n:"Coca-Cola 2L", p:10.90, d:"gelada"},
-    {n:"Energético Red Bull", p:9.90, d:"250ml"},
-    {n:"Água com gás", p:3.50, d:"500ml"},
-    {n:"Tônica Antarctica", p:4.50, d:"350ml · pra gin"},
-  ]},
-  { cat:"Gelo & Acessórios", emoji:"🧊", items:[
-    {n:"Gelo em cubos", p:8.00, d:"2kg"},
-    {n:"Gelo de coco", p:12.00, d:"saco 2kg"},
-    {n:"Copo descartável (50un)", p:9.90, d:"pacote 300ml"},
-    {n:"Limão Taiti", p:6.00, d:"bandeja com 6 unidades"},
-  ]},
-];
+let MENU = []; // FASE 2: catálogo carregado do Supabase (fonte única)
 
 /* ===================== ESTADO ===================== */
 let cart = [];
 let lineSeq = 1;
 let lastOrder = null;
+let SENDING=false;
 const GELO_FLAVORS = ["Natural","Morango","Maracujá","Limão"];
 const brl = v => "R$ " + v.toFixed(2).replace(".", ",");
 const pct = (old,p) => Math.round((old-p)/old*100);
@@ -537,7 +482,9 @@ function enterApp(){ document.getElementById("gate").style.display="none"; docum
 function denyAge(){ document.getElementById("gateAsk").style.display="none"; document.getElementById("gateDeny").style.display="block"; }
 function backToAsk(){ document.getElementById("gateDeny").style.display="none"; document.getElementById("gateAsk").style.display="block"; }
 
-/* ===================== RENDER DESTAQUES ===================== */
+/* ===================== RENDER (do Supabase) ===================== */
+function renderCatalog(){
+  document.getElementById('destaques').innerHTML='';document.getElementById('menu').innerHTML='';document.getElementById('catNav').innerHTML='';
 const destEl = document.getElementById("destaques");
 MENU.forEach((sec,ci)=> sec.items.forEach((it,ii)=>{
   if(!it.feat) return;
@@ -602,6 +549,33 @@ if(typeof IntersectionObserver!=="undefined"){
   },{rootMargin:"-45% 0px -50% 0px"});
   secs.forEach(s=>obsCat.observe(s));
 }
+}
+
+function loadCatalog(){
+  const H={apikey:SUPA.key,Authorization:'Bearer '+SUPA.key};
+  return Promise.all([
+    fetch(SUPA.url+'/rest/v1/categories?select=*&ativa=eq.true&order=ordem.asc',{headers:H}).then(function(r){return r.json();}),
+    fetch(SUPA.url+'/rest/v1/products?select=*&ativo=eq.true&order=ordem.asc',{headers:H}).then(function(r){return r.json();}),
+    fetch(SUPA.url+'/rest/v1/settings?select=*&limit=1',{headers:H}).then(function(r){return r.json();}).catch(function(){return [];})
+  ]).then(function(a){
+    var cats=a[0]||[], prods=a[1]||[], st=(a[2]&&a[2][0])||null;
+    if(st){ if(st.taxa!=null) CONFIG.taxaEntrega=+st.taxa; if(st.minimo!=null) CONFIG.minPedido=+st.minimo; if(st.whatsapp) CONFIG.whatsapp=String(st.whatsapp).replace(/\D/g,''); }
+    MENU = cats.map(function(c){
+      return {cat:c.nome, emoji:c.emoji||'\ud83c\udf7e',
+        items:prods.filter(function(p){return p.categoria===c.nome;}).sort(function(x,y){return (x.ordem||0)-(y.ordem||0);}).map(function(p){
+          var promo=(p.promo!=null?+p.promo:null), preco=+p.preco;
+          return {id:p.id, n:p.nome, d:p.descricao||'', p:(promo!=null?promo:preco), old:(promo!=null?preco:undefined), feat:!!p.destaque, tag:p.tag||undefined, combo:!!p.combo, gelo:p.gelo||0, estoque:(p.estoque!=null?p.estoque:9999)};
+        })};
+    }).filter(function(sec){return sec.items.length>0;});
+    window.MENU=MENU; window.CONFIG=CONFIG;
+    return MENU;
+  });
+}
+(function initCatalog(){
+  var m=document.getElementById('menu');
+  if(m) m.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--cinza)">Carregando cardápio\u2026</div>';
+  loadCatalog().then(function(){ renderCatalog(); }).catch(function(e){ console.warn('catalogo',e); if(m) m.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--cinza)">N\u00e3o foi poss\u00edvel carregar o card\u00e1pio agora. Recarregue a p\u00e1gina. \ud83c\udf7a</div>'; });
+})();
 
 /* ===================== QUICK ADD ===================== */
 function quickAdd(ci,ii){
@@ -751,9 +725,18 @@ function updateTotals(){
 }
 function val(id){ return (document.getElementById(id).value||"").trim(); }
 function show_err(id,on){ document.getElementById(id).style.display=on?"block":"none"; }
+function toast(m){
+  var t=document.getElementById("toast");
+  if(!t){ t=document.createElement("div"); t.id="toast";
+    t.style.cssText="position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:300;max-width:88%;background:#1b1b1b;color:#fff;border:1px solid var(--borda);border-radius:12px;padding:12px 16px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.6);text-align:center;transition:opacity .25s;opacity:0;";
+    document.body.appendChild(t); }
+  t.textContent=m; t.style.opacity="1";
+  clearTimeout(t._h); t._h=setTimeout(function(){ t.style.opacity="0"; },3200);
+}
 
-/* ===================== FINALIZAR (validação + confirmação) ===================== */
+/* ===================== FINALIZAR (preço/estoque validados no servidor via RPC) ===================== */
 function finalizar(){
+  if(SENDING) return;
   const nome=val("f_nome"), fone=val("f_fone");
   const foneDigits=fone.replace(/\D/g,"");
   const nomeOk=nome.length>=2, foneOk=foneDigits.length>=10;
@@ -761,60 +744,34 @@ function finalizar(){
   const idadeOk=document.getElementById("f_idade").checked;
   show_err("e_nome",!nomeOk); show_err("e_fone",!foneOk); show_err("e_end",!endOk); show_err("e_idade",!idadeOk);
   if(!(nomeOk&&foneOk&&endOk&&idadeOk)) return;
-
-  const {sub}=totals();
-  const taxa=isEntrega()?CONFIG.taxaEntrega:0;
-  const total=sub+taxa;
-  const num=Math.floor(1000+Math.random()*9000);
+  if(!cart.length){ toast("Carrinho vazio."); return; }
   const pg=document.querySelector('input[name="pg"]:checked').value;
-
-  let itens="";
-  cart.forEach(l=>{
-    itens+=`• ${l.q}x ${l.n} — ${brl(lineTotal(l))}\n`;
-    if(l.gelos&&l.gelos.length) itens+=`   🧊 gelos: ${l.gelos.map(g=>g.c+"x "+g.f).join(", ")}\n`;
-    if(l.notes) itens+=`   obs: ${l.notes}\n`;
-  });
-  let entrega = isEntrega()
-    ? `🛵 *Entrega*\nEndereço: ${val("f_rua")}${val("f_num")?", "+val("f_num"):""}\n`+
-      (val("f_bairro")?`Bairro: ${val("f_bairro")}\n`:"")+
-      (val("f_comp")?`Complemento: ${val("f_comp")}\n`:"")+
-      (val("f_ref")?`Referência: ${val("f_ref")}\n`:"")
-    : `🏪 *Retirada no local*\n`;
-  let pgTxt=`*Pagamento:* ${pg}`;
-  if(pg==="Dinheiro"&&val("f_troco")) pgTxt+=` (troco para R$ ${val("f_troco")})`;
+  const tipo=isEntrega()?"Entrega":"Retirada";
+  const endereco=isEntrega()?(val("f_rua")+(val("f_num")?", "+val("f_num"):"")):"Retirada no local";
+  const bairro=val("f_bairro")||"";
+  const troco=(pg==="Dinheiro"?val("f_troco"):"")||"";
   const obs=val("f_obs");
-
-  const msg=
-`🍻 *Vira Copo Delivery — Pedido #${num}*
-
-*Cliente:* ${nome}
-*WhatsApp:* ${fone}
-
-${entrega}
-*Itens:*
-${itens}*Subtotal:* ${brl(sub)}
-${taxa>0?"*Taxa de entrega:* "+brl(taxa)+"\n":""}*Total:* ${brl(total)}
-
-${pgTxt}${obs?"\n*Obs:* "+obs:""}
-
-✅ Cliente declarou ser maior de 18 anos.
-🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.`;
-
-  lastOrder = { num, msg };
-
-  // grava o pedido no Supabase (cai no kanban do admin ao vivo)
-  var itensArr = cart.map(function(l){ return {n:l.n,q:l.q,p:l.base,gelos:l.gelos||null}; });
-  sbInsertOrder({
-    numero:String(num), cliente:nome, whatsapp:fone,
-    endereco: isEntrega()?(val("f_rua")+(val("f_num")?", "+val("f_num"):"")):"Retirada no local",
-    bairro:val("f_bairro")||"", pagamento:pg, troco:(pg==="Dinheiro"?val("f_troco"):"")||"",
-    itens:itensArr, subtotal:sub, taxa:taxa, total:total, obs:obs||"",
-    status:"novo", maioridade:true, doc_conferido:null, entrega_autorizada:null,
-    historico:[{ts:new Date().toISOString(),de:null,para:"novo",user:"site"}]
-  });
-  document.getElementById("confirmNum").textContent="#"+num;
-  document.getElementById("waPreview").innerHTML=`<div class="wa-h">📲 Prévia da mensagem WhatsApp</div>${escapeHtml(msg)}`;
-  showSheet("confirmSheet");
+  const p_items=cart.map(function(l){ var it=MENU[l.ci].items[l.ii]; return {product_id:(it&&it.id)||null, qty:l.q, gelos:(l.gelos&&l.gelos.length?l.gelos:null)}; });
+  if(p_items.some(function(i){return !i.product_id;})){ toast("Item inválido no carrinho, recarregue a página."); return; }
+  SENDING=true;
+  var fbtn=document.querySelector('#checkoutSheet .btn-primary'); if(fbtn) fbtn.disabled=true;
+  toast("Enviando pedido…");
+  var H={apikey:SUPA.key,Authorization:"Bearer "+SUPA.key,"Content-Type":"application/json"};
+  fetch(SUPA.url+"/rest/v1/rpc/create_order",{method:"POST",headers:H,body:JSON.stringify({p_cliente:nome,p_whatsapp:fone,p_endereco:endereco,p_bairro:bairro,p_pagamento:pg,p_troco:troco,p_obs:obs,p_tipo:tipo,p_items:p_items})})
+   .then(function(r){ return r.json().then(function(j){ return {st:r.status,j:j}; }); })
+   .then(function(o){ SENDING=false; if(fbtn) fbtn.disabled=false;
+     if(o.st>=400 || !o.j || !o.j.numero){ toast((o.j&&o.j.message)||"Não foi possível concluir o pedido. Revise o carrinho."); return; }
+     var res=o.j;
+     var itensTxt=(res.itens||[]).map(function(i){ var t="• "+i.q+"x "+i.n+" — "+brl(i.sub!=null?i.sub:i.p*i.q); if(i.gelos&&i.gelos.length) t+="\n   🧊 gelos: "+i.gelos.map(function(g){return g.c+"x "+g.f;}).join(", "); return t; }).join("\n");
+     var entrega=tipo==="Entrega"?("🛵 *Entrega*\nEndereço: "+endereco+"\n"+(bairro?"Bairro: "+bairro+"\n":"")+(val("f_comp")?"Complemento: "+val("f_comp")+"\n":"")+(val("f_ref")?"Referência: "+val("f_ref")+"\n":"")):"🏪 *Retirada no local*\n";
+     var pgTxt="*Pagamento:* "+pg+((pg==="Dinheiro"&&troco)?" (troco para R$ "+troco+")":"");
+     var msg="🍻 *Vira Copo Delivery — Pedido #"+res.numero+"*\n\n*Cliente:* "+nome+"\n*WhatsApp:* "+fone+"\n\n"+entrega+"\n*Itens:*\n"+itensTxt+"\n\n*Subtotal:* "+brl(res.subtotal)+"\n"+(res.taxa>0?"*Taxa de entrega:* "+brl(res.taxa)+"\n":"")+"*Total:* "+brl(res.total)+"\n\n"+pgTxt+(obs?"\n*Obs:* "+obs:"")+"\n\n✅ Cliente declarou ser maior de 18 anos.\n🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.";
+     lastOrder={num:res.numero,msg:msg};
+     document.getElementById("confirmNum").textContent="#"+res.numero;
+     document.getElementById("waPreview").innerHTML='<div class="wa-h">📲 Prévia da mensagem WhatsApp</div>'+escapeHtml(msg);
+     cart=[]; syncAll();
+     showSheet("confirmSheet");
+   }).catch(function(e){ SENDING=false; if(fbtn) fbtn.disabled=false; console.warn(e); toast("Erro de conexão. Tente novamente."); });
 }
 
 function enviarWhatsApp(){
