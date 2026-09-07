@@ -432,8 +432,16 @@
       <span><b>Documento na entrega:</b> será solicitado um documento oficial com foto que comprove maioridade. Sem comprovação, a entrega não será concluída e o pedido poderá ser cancelado.</span>
     </div>
 
+    <label class="fld">Cupom de desconto</label>
+    <div style="display:flex;gap:8px;align-items:stretch">
+      <input id="f_cupom" placeholder="Ex: GELADA10" autocapitalize="characters" style="flex:1;text-transform:uppercase" />
+      <button type="button" class="btn-ghost" style="width:auto;margin-top:0;padding:0 18px;white-space:nowrap" onclick="aplicarCupom()">Aplicar</button>
+    </div>
+    <div class="err" id="cupomMsg" style="display:none"></div>
+
     <div class="totbox">
       <div class="totrow"><span>Subtotal</span><span id="ck_sub">R$ 0,00</span></div>
+      <div class="totrow hidden" id="ck_descRow"><span id="ck_descLabel">Desconto</span><span id="ck_desc" style="color:var(--ok)">- R$ 0,00</span></div>
       <div class="totrow" id="ck_taxaRow"><span>Taxa de entrega</span><span id="ck_taxa">R$ 0,00</span></div>
       <div class="totrow big"><span>Total</span><b id="ck_total">R$ 0,00</b></div>
     </div>
@@ -474,6 +482,7 @@ let cart = [];
 let lineSeq = 1;
 let lastOrder = null;
 let SENDING=false;
+let COUPON=null; // cupom aplicado {codigo,tipo,valor}
 const GELO_FLAVORS = ["Natural","Morango","Maracujá","Limão"];
 const brl = v => "R$ " + v.toFixed(2).replace(".", ",");
 const pct = (old,p) => Math.round((old-p)/old*100);
@@ -716,13 +725,32 @@ function isEntrega(){ return document.querySelector('input[name="tipo"]:checked'
 function toggleEntrega(){ document.getElementById("enderecoBox").classList.toggle("hidden",!isEntrega()); updateTotals(); }
 function toggleTroco(){ const din=document.querySelector('input[name="pg"]:checked').value==="Dinheiro";
   document.getElementById("trocoBox").classList.toggle("hidden",!din); }
+function couponDiscount(sub){ if(!COUPON) return 0; var d = COUPON.tipo==="%" ? Math.round(sub*COUPON.valor)/100 : COUPON.valor; if(d>sub) d=sub; return Math.round(d*100)/100; }
 function updateTotals(){
   const {sub}=totals();
   const taxa=isEntrega()?CONFIG.taxaEntrega:0;
+  const desc=couponDiscount(sub);
   document.getElementById("ck_sub").textContent=brl(sub);
   document.getElementById("ck_taxa").textContent=taxa>0?brl(taxa):"Grátis";
   document.getElementById("ck_taxaRow").querySelector("span:first-child").textContent=isEntrega()?"Taxa de entrega":"Retirada no local";
-  document.getElementById("ck_total").textContent=brl(sub+taxa);
+  const dRow=document.getElementById("ck_descRow");
+  if(desc>0 && dRow){ dRow.classList.remove("hidden"); document.getElementById("ck_descLabel").textContent="Cupom "+COUPON.codigo; document.getElementById("ck_desc").textContent="- "+brl(desc); }
+  else if(dRow){ dRow.classList.add("hidden"); }
+  document.getElementById("ck_total").textContent=brl(Math.max(0,sub-desc)+taxa);
+}
+function aplicarCupom(){
+  var input=document.getElementById("f_cupom"); var code=(input.value||"").trim().toUpperCase();
+  var msg=document.getElementById("cupomMsg");
+  if(!code){ COUPON=null; if(msg) msg.style.display="none"; updateTotals(); return; }
+  var sub=totals().sub;
+  msg.style.display="block"; msg.style.color="var(--cinza)"; msg.textContent="Verificando cupom\u2026";
+  var H={apikey:SUPA.key,Authorization:"Bearer "+SUPA.key,"Content-Type":"application/json"};
+  fetch(SUPA.url+"/rest/v1/rpc/validate_coupon",{method:"POST",headers:H,body:JSON.stringify({p_codigo:code,p_subtotal:sub})})
+   .then(function(r){return r.json();}).then(function(res){
+     if(res&&res.valid){ COUPON={codigo:res.codigo,tipo:res.tipo,valor:+res.valor}; msg.style.color="var(--ok)"; msg.textContent="\u2705 Cupom "+res.codigo+" aplicado"+(res.tipo==="%"?" ("+res.valor+"% OFF)":" (- "+brl(res.valor)+")"); }
+     else { COUPON=null; msg.style.color="#ff7a7a"; msg.textContent="\u274c "+((res&&res.message)||"Cupom inv\u00e1lido"); }
+     updateTotals();
+   }).catch(function(){ COUPON=null; msg.style.color="#ff7a7a"; msg.textContent="Erro ao validar. Tente de novo."; updateTotals(); });
 }
 function val(id){ return (document.getElementById(id).value||"").trim(); }
 function show_err(id,on){ document.getElementById(id).style.display=on?"block":"none"; }
@@ -758,7 +786,7 @@ function finalizar(){
   var fbtn=document.querySelector('#checkoutSheet .btn-primary'); if(fbtn) fbtn.disabled=true;
   toast("Enviando pedido…");
   var H={apikey:SUPA.key,Authorization:"Bearer "+SUPA.key,"Content-Type":"application/json"};
-  fetch(SUPA.url+"/rest/v1/rpc/create_order",{method:"POST",headers:H,body:JSON.stringify({p_cliente:nome,p_whatsapp:fone,p_endereco:endereco,p_bairro:bairro,p_pagamento:pg,p_troco:troco,p_obs:obs,p_tipo:tipo,p_items:p_items})})
+  fetch(SUPA.url+"/rest/v1/rpc/create_order",{method:"POST",headers:H,body:JSON.stringify({p_cliente:nome,p_whatsapp:fone,p_endereco:endereco,p_bairro:bairro,p_pagamento:pg,p_troco:troco,p_obs:obs,p_tipo:tipo,p_items:p_items,p_cupom:(COUPON?COUPON.codigo:null)})})
    .then(function(r){ return r.json().then(function(j){ return {st:r.status,j:j}; }); })
    .then(function(o){ SENDING=false; if(fbtn) fbtn.disabled=false;
      if(o.st>=400 || !o.j || !o.j.numero){ toast((o.j&&o.j.message)||"Não foi possível concluir o pedido. Revise o carrinho."); return; }
@@ -766,7 +794,7 @@ function finalizar(){
      var itensTxt=(res.itens||[]).map(function(i){ var t="• "+i.q+"x "+i.n+" — "+brl(i.sub!=null?i.sub:i.p*i.q); if(i.gelos&&i.gelos.length) t+="\n   🧊 gelos: "+i.gelos.map(function(g){return g.c+"x "+g.f;}).join(", "); return t; }).join("\n");
      var entrega=tipo==="Entrega"?("🛵 *Entrega*\nEndereço: "+endereco+"\n"+(bairro?"Bairro: "+bairro+"\n":"")+(val("f_comp")?"Complemento: "+val("f_comp")+"\n":"")+(val("f_ref")?"Referência: "+val("f_ref")+"\n":"")):"🏪 *Retirada no local*\n";
      var pgTxt="*Pagamento:* "+pg+((pg==="Dinheiro"&&troco)?" (troco para R$ "+troco+")":"");
-     var msg="🍻 *Vira Copo Delivery — Pedido #"+res.numero+"*\n\n*Cliente:* "+nome+"\n*WhatsApp:* "+fone+"\n\n"+entrega+"\n*Itens:*\n"+itensTxt+"\n\n*Subtotal:* "+brl(res.subtotal)+"\n"+(res.taxa>0?"*Taxa de entrega:* "+brl(res.taxa)+"\n":"")+"*Total:* "+brl(res.total)+"\n\n"+pgTxt+(obs?"\n*Obs:* "+obs:"")+"\n\n✅ Cliente declarou ser maior de 18 anos.\n🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.";
+     var msg="🍻 *Vira Copo Delivery — Pedido #"+res.numero+"*\n\n*Cliente:* "+nome+"\n*WhatsApp:* "+fone+"\n\n"+entrega+"\n*Itens:*\n"+itensTxt+"\n\n*Subtotal:* "+brl(res.subtotal)+"\n"+((res.desconto&&res.desconto>0)?("*Desconto"+(res.cupom?" ("+res.cupom+")":"")+":* - "+brl(res.desconto)+"\n"):"")+(res.taxa>0?"*Taxa de entrega:* "+brl(res.taxa)+"\n":"")+"*Total:* "+brl(res.total)+"\n\n"+pgTxt+(obs?"\n*Obs:* "+obs:"")+"\n\n✅ Cliente declarou ser maior de 18 anos.\n🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.";
      lastOrder={num:res.numero,msg:msg};
      document.getElementById("confirmNum").textContent="#"+res.numero;
      document.getElementById("waPreview").innerHTML='<div class="wa-h">📲 Prévia da mensagem WhatsApp</div>'+escapeHtml(msg);
@@ -784,6 +812,7 @@ function resetApp(){
   cart=[]; lastOrder=null;
   ["f_nome","f_fone","f_rua","f_num","f_bairro","f_comp","f_ref","f_troco","f_obs"].forEach(id=>{const e=document.getElementById(id);if(e)e.value="";});
   document.getElementById("f_idade").checked=false;
+  COUPON=null; var _fc=document.getElementById("f_cupom"); if(_fc) _fc.value=""; var _cm=document.getElementById("cupomMsg"); if(_cm) _cm.style.display="none";
   syncAll(); closeSheets();
 }
 

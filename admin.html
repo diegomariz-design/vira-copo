@@ -446,11 +446,11 @@ function startAuthRefresh(){
 function sbActive(){ return !!SUPA_ADMIN.url; }
 function sbHeaders(extra){ return Object.assign({apikey:SUPA_ADMIN.key,Authorization:"Bearer "+authToken(),"Content-Type":"application/json"}, extra||{}); }
 function sbRowToOrder(r){ return {id:r.id,numero:r.numero,cliente:r.cliente,whatsapp:r.whatsapp,endereco:r.endereco,bairro:r.bairro,
-  pagamento:r.pagamento,troco:r.troco||"",itens:r.itens||[],subtotal:+r.subtotal,taxa:+r.taxa,total:+r.total,obs:r.obs||"",
+  pagamento:r.pagamento,troco:r.troco||"",itens:r.itens||[],subtotal:+r.subtotal,taxa:+r.taxa,desconto:+r.desconto||0,cupom:r.cupom||null,total:+r.total,obs:r.obs||"",
   status:r.status||"novo",maioridade:r.maioridade,docConferido:r.doc_conferido,entregaAutorizada:r.entrega_autorizada,
   motivoCancel:r.motivo_cancel||"",entregador:r.entregador||"",criadoEm:r.created_at||nowISO(),historico:r.historico||[]}; }
 function sbOrderToRow(o){ return {numero:o.numero,cliente:o.cliente,whatsapp:o.whatsapp,endereco:o.endereco,bairro:o.bairro,
-  pagamento:o.pagamento,troco:o.troco,itens:o.itens,subtotal:o.subtotal,taxa:o.taxa,total:o.total,obs:o.obs,status:o.status,
+  pagamento:o.pagamento,troco:o.troco,itens:o.itens,subtotal:o.subtotal,taxa:o.taxa,desconto:o.desconto||0,cupom:o.cupom||null,total:o.total,obs:o.obs,status:o.status,
   maioridade:o.maioridade,doc_conferido:o.docConferido,entrega_autorizada:o.entregaAutorizada,motivo_cancel:o.motivoCancel,
   entregador:o.entregador,historico:o.historico}; }
 function sbPatchOrder(o){ if(!sbActive()||!o.id||String(o.id).indexOf("o_")===0) return;
@@ -743,6 +743,7 @@ function orderModal(id){
     <div class="od-items">${itens}
       <div class="it" style="border-top:1px solid var(--borda2);margin-top:4px;padding-top:7px"><span>Subtotal</span><span>${brl(o.subtotal)}</span></div>
       <div class="it"><span>Taxa de entrega</span><span>${brl(o.taxa)}</span></div>
+      ${(o.desconto&&o.desconto>0)?`<div class="it"><span>Desconto${o.cupom?" ("+o.cupom+")":""}</span><span style="color:var(--ok)">- ${brl(o.desconto)}</span></div>`:""}
       <div class="it"><span style="font-weight:800">Total</span><span style="font-weight:900;color:var(--ouro)">${brl(o.total)}</span></div>
     </div>
     ${o.obs?`<label class="f">Observações</label><div style="font-size:13px;color:#ffd9b0">“${o.obs}”</div>`:""}
