@@ -304,7 +304,11 @@ function timeAgo(iso){ const s=(Date.now()-new Date(iso).getTime())/1000;
   if(s<60)return "agora"; if(s<3600)return Math.floor(s/60)+" min"; if(s<86400)return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d"; }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function isToday(iso){ return iso.slice(0,10)===todayStr(); }
-function waLink(phone,text){ return "https://wa.me/"+String(phone).replace(/\D/g,"")+"?text="+encodeURIComponent(text); }
+function waLink(phone,text){ var d=String(phone||"").replace(/\D/g,""); if(d.length>=10&&d.length<=11) d="55"+d; return "https://wa.me/"+d+"?text="+encodeURIComponent(text); }
+function openWa(phone,text){ var d=String(phone||"").replace(/\D/g,""); if(!d){ toast("Cliente sem número de WhatsApp."); return; } var w=window.open(waLink(phone,text||""),"_blank"); if(!w){ toast("Libere os pop-ups do site para abrir o WhatsApp."); } }
+function waOrder(id,status){ var o=DB.orders.find(function(x){return x.id===id;}); if(o) openWa(o.whatsapp, status? waMsg(status,o) : (CONFIG.loja.msgPadrao||"")); }
+function waCust(id){ var c=DB.customers.find(function(x){return x.id===id;}); if(c) openWa(c.whatsapp, CONFIG.loja.msgPadrao||""); }
+function waDrv(id){ var d=DB.drivers.find(function(x){return x.id===id;}); if(d) openWa(d.whatsapp, ""); }
 function mapsLink(addr){ return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr); }
 /* ============================================================
    STORE — persistência (localStorage agora; Supabase quando configurado)
@@ -754,7 +758,7 @@ function orderModal(id){
     <div class="hist">${hist}</div>`;
   const foot=`
     <button class="btn btn-ghost btn-sm" onclick="printSep('${o.id}')">🖨️ Separação</button>
-    <button class="btn btn-wa btn-sm" onclick="window.open(waLink('${o.whatsapp}','${(CONFIG.loja.msgPadrao||'').replace(/'/g,"")}'),'_blank')">💬 WhatsApp</button>
+    <button class="btn btn-wa btn-sm" onclick="waOrder('${o.id}')">💬 WhatsApp</button>
     <button class="btn btn-red btn-sm" onclick="cancelOrder('${o.id}')">Cancelar pedido</button>`;
   openModal(`Pedido #${o.numero} · <span style="color:var(--cinza);font-size:13px">${ST[o.status].label}</span>`, body, foot);
 }
@@ -774,7 +778,7 @@ function setStatus(id,status){
     `<p style="color:var(--cinza);font-size:13px">${auto?"📲 Mensagem enviada automaticamente para":"Mensagem pronta para enviar ao cliente"} <b style="color:#fff">${o.cliente}</b>:</p>
      <div class="od-items" style="white-space:pre-line;color:#dcdcdc">${msg}</div>`,
     `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button>
-     ${auto?"":`<button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Enviar no WhatsApp</button>`}`);
+     ${auto?"":`<button class="btn btn-wa" onclick="waOrder('${o.id}','${status}')">💬 Enviar no WhatsApp</button>`}`);
   toast(auto?"Status atualizado · WhatsApp enviado automático.":"Status atualizado e registrado.");
 }
 function setDoc(id,v){ const o=DB.orders.find(x=>x.id===id); o.docConferido=v; if(v===false){o.entregaAutorizada=false;} store.save(); sbPatchOrder(o); orderModal(id); toast("Documento atualizado."); }
@@ -809,7 +813,7 @@ function confirmCancel(id){
   openModal("Pedido cancelado",
     `<div class="od-items" style="white-space:pre-line;color:#dcdcdc">${msg}</div>`,
     `<button class="btn btn-ghost btn-sm" onclick="closeModal()">Fechar</button>
-     ${auto?"":`<button class="btn btn-wa" onclick="window.open(waLink('${o.whatsapp}',${JSON.stringify(msg)}),'_blank')">💬 Avisar cliente</button>`}`);
+     ${auto?"":`<button class="btn btn-wa" onclick="waOrder('${o.id}','cancelado')">💬 Avisar cliente</button>`}`);
   toast(auto?"Pedido cancelado · cliente avisado automático.":"Pedido cancelado e registrado.");
 }
 function printSep(id){
@@ -1016,7 +1020,7 @@ function customerModal(id){
     <label class="switch"><input type="checkbox" id="c_blo" ${c.bloqueado?"checked":""}/> Cliente bloqueado</label>
     ${id?`<div class="od-grid" style="margin-top:12px"><div><div class="k">Total de pedidos</div>${c.pedidos}</div><div><div class="k">Total gasto</div>${brl(c.gasto)}</div></div>`:""}
     ${histHTML}`;
-  const foot=`${id?`<button class="btn btn-wa btn-sm" onclick="window.open(waLink('${c.whatsapp}','${(CONFIG.loja.msgPadrao||'').replace(/'/g,'')}'),'_blank')">💬 WhatsApp</button>`:""}
+  const foot=`${id?`<button class="btn btn-wa btn-sm" onclick="waCust('${c.id}')">💬 WhatsApp</button>`:""}
     <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-red" onclick="saveCustomer('${id||""}')">Salvar</button>`;
   openModal(id?"Cliente":"Novo cliente", body, foot);
@@ -1096,7 +1100,7 @@ VIEWS.entregadores=function(){
     <td>${d.motoModelo||"—"}<div style="font-size:11px;color:var(--cinza2)">${d.motoPlaca||""} ${d.motoCor||""}</div></td>
     <td>${d.cnhImg?'<span class="pill on">CNH ✓</span>':'<span class="pill muted">sem CNH</span>'}</td>
     <td>${d.contratoFile?`<a class="pill on" href="${d.contratoFile}" target="_blank">📄 contrato</a>`:'<span class="pill muted">sem contrato</span>'}</td>
-    <td><div class="row-actions"><button class="btn btn-ghost btn-sm" onclick="driverModal('${d.id}')">Editar</button><button class="btn btn-wa btn-sm" onclick="window.open(waLink('${d.whatsapp}',''),'_blank')">💬</button></div></td></tr>`).join("")||'<tr><td colspan="5" class="empty-st">Nenhum entregador. Clique em + Entregador.</td></tr>';
+    <td><div class="row-actions"><button class="btn btn-ghost btn-sm" onclick="driverModal('${d.id}')">Editar</button><button class="btn btn-wa btn-sm" onclick="waDrv('${d.id}')">💬</button></div></td></tr>`).join("")||'<tr><td colspan="5" class="empty-st">Nenhum entregador. Clique em + Entregador.</td></tr>';
   document.getElementById("content").innerHTML=head+`<div class="t-wrap"><div class="t-scroll"><table><thead><tr><th>Entregador</th><th>Moto</th><th>CNH</th><th>Contrato</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 };
 function driverModal(id){
