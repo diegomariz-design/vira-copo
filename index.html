@@ -198,6 +198,9 @@
   .gp-ctrl button:disabled{opacity:.35;cursor:not-allowed;}
   .gp-ctrl span{min-width:16px;text-align:center;font-weight:800;font-size:14px;}
   .citem .cgelo{font-size:11.5px;color:#9fe3ad;margin-top:3px;line-height:1.4;}
+  .var-opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .var-opt{padding:9px 14px;border-radius:11px;border:1px solid var(--borda2);background:var(--card);color:var(--cinza);font-weight:700;font-size:13px;cursor:pointer;transition:.15s;}
+  .var-opt.sel{background:linear-gradient(145deg,var(--vermelho2),var(--vermelho));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(255,0,51,.35);}
 
   /* ===================== OVERLAY + SHEETS ===================== */
   .overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.65);opacity:0;pointer-events:none;transition:.25s;}
@@ -459,10 +462,10 @@
     <div class="confirm-wrap">
       <div class="check">✅</div>
       <h3>Pedido recebido!</h3>
-      <p>Seu pedido <span class="onum" id="confirmNum">#0000</span> foi registrado.</p>
+      <p>Seu pedido <span class="onum" id="confirmNum">#0000</span> foi registrado. Abrindo o WhatsApp…</p>
       <div class="wa-preview" id="waPreview"></div>
       <p style="font-size:12px">Tenha um documento com foto em mãos no recebimento.</p>
-      <button class="btn-primary" onclick="enviarWhatsApp()">🟢 Enviar pedido no WhatsApp</button>
+      <button class="btn-primary" onclick="enviarWhatsApp()">🟢 Não abriu? Reabrir no WhatsApp</button>
       <button class="btn-ghost" onclick="resetApp()">Fazer novo pedido</button>
     </div>
   </div>
@@ -483,7 +486,7 @@ let lineSeq = 1;
 let lastOrder = null;
 let SENDING=false;
 let COUPON=null; // cupom aplicado {codigo,tipo,valor}
-const GELO_FLAVORS = ["Natural","Morango","Maracujá","Limão"];
+const GELO_FLAVORS = ["Maracujá","Morango","Melancia","Coco","Bally","White Horse","Maçã Verde","Amora"];
 const brl = v => "R$ " + v.toFixed(2).replace(".", ",");
 const pct = (old,p) => Math.round((old-p)/old*100);
 
@@ -574,7 +577,7 @@ function loadCatalog(){
       return {cat:c.nome, emoji:c.emoji||'\ud83c\udf7e',
         items:prods.filter(function(p){return p.categoria===c.nome;}).sort(function(x,y){return (x.ordem||0)-(y.ordem||0);}).map(function(p){
           var promo=(p.promo!=null?+p.promo:null), preco=+p.preco;
-          return {id:p.id, n:p.nome, d:p.descricao||'', p:(promo!=null?promo:preco), old:(promo!=null?preco:undefined), feat:!!p.destaque, tag:p.tag||undefined, combo:!!p.combo, gelo:p.gelo||0, estoque:(p.estoque!=null?p.estoque:9999)};
+          return {id:p.id, n:p.nome, d:p.descricao||'', p:(promo!=null?promo:preco), old:(promo!=null?preco:undefined), feat:!!p.destaque, tag:p.tag||undefined, combo:!!p.combo, gelo:p.gelo||0, opcoes:(p.opcoes||null), estoque:(p.estoque!=null?p.estoque:9999)};
         })};
     }).filter(function(sec){return sec.items.length>0;});
     window.MENU=MENU; window.CONFIG=CONFIG;
@@ -588,12 +591,22 @@ function loadCatalog(){
 })();
 
 /* ===================== QUICK ADD ===================== */
+function hasVariante(it){ return !!(it && it.opcoes && it.opcoes.itens && it.opcoes.itens.length); }
+// Normaliza os gelos (agrupa por sabor + ordena) — ordem de escolha não muda a assinatura
+function normGelos(gelos){
+  if(!gelos||!gelos.length) return "";
+  var m={}; gelos.forEach(function(g){ if(g&&g.f) m[g.f]=(m[g.f]||0)+(+g.c||0); });
+  return Object.keys(m).filter(function(f){return m[f]>0;}).sort().map(function(f){ return f+":"+m[f]; }).join(",");
+}
+// Assinatura lógica do item: produto + variante + customização(notes) + gelos normalizados
+function lineSig(l){ return l.ci+"|"+l.ii+"|"+(l.variante||"")+"|"+((l.notes||"").trim())+"|"+normGelos(l.gelos); }
 function quickAdd(ci,ii){
   const it=MENU[ci].items[ii];
-  if(it.combo){ openDetail(ci,ii); return; } // combo precisa escolher sabores
-  const ex=cart.find(l=>l.ci===ci&&l.ii===ii&&!l.notes);
+  if(it.combo || hasVariante(it)){ openDetail(ci,ii); return; } // combo/variante escolhe no detalhe
+  const sig=lineSig({ci:ci,ii:ii,variante:null,notes:"",gelos:null});
+  const ex=cart.find(function(l){ return lineSig(l)===sig; });
   if(ex){ ex.q++; }
-  else cart.push({id:lineSeq++,ci,ii,n:it.n,base:it.p,q:1,notes:"",emoji:MENU[ci].emoji});
+  else cart.push({id:lineSeq++,ci,ii,n:it.n,base:it.p,q:1,notes:"",variante:null,gelos:null,emoji:MENU[ci].emoji});
   syncAll(); bump();
 }
 
@@ -601,7 +614,8 @@ function quickAdd(ci,ii){
 let det=null;
 function openDetail(ci,ii){
   const it=MENU[ci].items[ii];
-  det={ci,ii,q:1,gelos:it.combo?GELO_FLAVORS.map(()=>0):null,geloMax:it.gelo||0};
+  const hv=hasVariante(it);
+  det={ci,ii,q:1,gelos:it.combo?GELO_FLAVORS.map(()=>0):null,geloMax:it.gelo||0,variante:null,hasVar:hv};
   let geloHTML="";
   if(it.combo){
     geloHTML=`<div class="gelo-pick">
@@ -616,6 +630,15 @@ function openDetail(ci,ii){
         </div></div>`).join("")}
     </div>`;
   }
+  let varHTML="";
+  if(hv){
+    var vlabel=it.opcoes.label||"Opção";
+    varHTML=`<div class="gelo-pick">
+      <div class="gp-head">🍹 ${vlabel} <span class="gp-count miss" id="varCount">Selecione</span></div>
+      <div class="gp-sub">Escolha ${vlabel.toLowerCase()} (obrigatório).</div>
+      <div class="var-opts" id="varOpts">${it.opcoes.itens.map(f=>`<button type="button" class="var-opt" data-v="${f}" onclick="chgVar(this)">${f}</button>`).join("")}</div>
+    </div>`;
+  }
   document.getElementById("detailScroll").innerHTML=`
     <div class="det-hero"><button class="det-back" onclick="closeDetail()">‹</button>${MENU[ci].emoji}</div>
     <div class="det-body">
@@ -623,16 +646,34 @@ function openDetail(ci,ii){
       <p class="ddesc">${it.d}</p>
       <div><span class="det-price">${brl(it.p)}</span>${it.old?`<span class="det-old">${brl(it.old)}</span>`:""}</div>
     </div>
+    ${varHTML}
     ${geloHTML}
     <div class="det-obs"><label>Alguma observação?</label>
       <textarea id="detObs" placeholder="Ex: bem gelada, marca alternativa..."></textarea></div>`;
   document.getElementById("detQ").textContent=1;
   updateDetTotal();
   if(it.combo) updateGeloUI();
+  updateAddState();
   document.getElementById("detailScreen").classList.add("show");
   document.body.style.overflow="hidden";
   document.getElementById("detailScroll").scrollTop=0;
 }
+function chgVar(btn){
+  if(!det) return;
+  det.variante=btn.getAttribute("data-v");
+  var opts=document.querySelectorAll("#varOpts .var-opt");
+  opts.forEach(function(b){ b.classList.toggle("sel", b===btn); });
+  var c=document.getElementById("varCount"); if(c){ c.textContent=det.variante; c.className="gp-count ok"; }
+  updateAddState();
+}
+function needsMore(){
+  if(!det) return false;
+  var it=MENU[det.ci].items[det.ii];
+  if(det.hasVar && !det.variante) return true;
+  if(it.combo && geloTotal()!==det.geloMax) return true;
+  return false;
+}
+function updateAddState(){ var btn=document.querySelector(".det-add"); if(btn) btn.classList.toggle("disabled", needsMore()); }
 function geloTotal(){ return det.gelos?det.gelos.reduce((a,b)=>a+b,0):0; }
 function chgGelo(k,d){
   if(!det.gelos) return;
@@ -647,8 +688,7 @@ function updateGeloUI(){
   const tot=geloTotal();
   const c=document.getElementById("geloCount");
   if(c){ c.textContent=tot+"/"+det.geloMax; c.className="gp-count "+(tot===det.geloMax?"ok":"miss"); }
-  const btn=document.querySelector(".det-add");
-  if(btn) btn.classList.toggle("disabled", tot!==det.geloMax);
+  updateAddState();
 }
 function closeDetail(){ document.getElementById("detailScreen").classList.remove("show"); document.body.style.overflow=""; det=null; }
 function detUnit(){ return MENU[det.ci].items[det.ii].p; }
@@ -656,13 +696,19 @@ function updateDetTotal(){ document.getElementById("detTotal").textContent=brl(d
 function detQty(d){ det.q=Math.max(1,det.q+d); document.getElementById("detQ").textContent=det.q; updateDetTotal(); }
 function detAdd(){
   const it=MENU[det.ci].items[det.ii];
-  let gelos=null;
-  if(it.combo){
-    if(geloTotal()!==det.geloMax){ updateGeloUI(); const gc=document.getElementById("geloCount"); if(gc&&gc.animate){gc.animate([{transform:"scale(1)"},{transform:"scale(1.25)"},{transform:"scale(1)"}],{duration:300});} return; }
-    gelos=GELO_FLAVORS.map((f,k)=>({f,c:det.gelos[k]})).filter(g=>g.c>0);
+  if(needsMore()){
+    if(it.combo && geloTotal()!==det.geloMax){ const gc=document.getElementById("geloCount"); if(gc&&gc.animate){gc.animate([{transform:"scale(1)"},{transform:"scale(1.25)"},{transform:"scale(1)"}],{duration:300});} }
+    if(det.hasVar && !det.variante){ const vc=document.getElementById("varCount"); if(vc&&vc.animate){vc.animate([{transform:"scale(1)"},{transform:"scale(1.2)"},{transform:"scale(1)"}],{duration:300});} }
+    return;
   }
+  let gelos=null;
+  if(it.combo){ gelos=GELO_FLAVORS.map((f,k)=>({f,c:det.gelos[k]})).filter(g=>g.c>0); }
+  const variante=det.variante||null;
   const notes=(document.getElementById("detObs")?.value||"").trim();
-  cart.push({id:lineSeq++,ci:det.ci,ii:det.ii,n:it.n,base:it.p,q:det.q,notes,gelos,emoji:MENU[det.ci].emoji});
+  const sig=lineSig({ci:det.ci,ii:det.ii,variante:variante,notes:notes,gelos:gelos});
+  const ex=cart.find(function(l){ return lineSig(l)===sig; });
+  if(ex){ ex.q+=det.q; }
+  else cart.push({id:lineSeq++,ci:det.ci,ii:det.ii,n:it.n,base:it.p,q:det.q,notes,variante,gelos,emoji:MENU[det.ci].emoji});
   closeDetail(); syncAll(); bump();
 }
 
@@ -705,6 +751,7 @@ function renderCart(){
   cart.forEach(l=>{
     html+=`<div class="citem"><div class="cline">
       <div class="cname">${l.q}x ${l.n}</div>
+      ${l.variante?`<div class="cgelo">🍹 ${l.variante}</div>`:""}
       ${l.gelos&&l.gelos.length?`<div class="cgelo">🧊 ${l.gelos.map(g=>g.c+"x "+g.f).join(" · ")}</div>`:""}
       ${l.notes?`<div class="cobs">“${l.notes}”</div>`:""}
       <div class="cprice">${brl(lineTotal(l))}</div>
@@ -780,8 +827,10 @@ function finalizar(){
   const bairro=val("f_bairro")||"";
   const troco=(pg==="Dinheiro"?val("f_troco"):"")||"";
   const obs=val("f_obs");
-  const p_items=cart.map(function(l){ var it=MENU[l.ci].items[l.ii]; return {product_id:(it&&it.id)||null, qty:l.q, gelos:(l.gelos&&l.gelos.length?l.gelos:null)}; });
+  const p_items=cart.map(function(l){ var it=MENU[l.ci].items[l.ii]; return {product_id:(it&&it.id)||null, qty:l.q, gelos:(l.gelos&&l.gelos.length?l.gelos:null), variante:(l.variante||null)}; });
   if(p_items.some(function(i){return !i.product_id;})){ toast("Item inválido no carrinho, recarregue a página."); return; }
+  // 1 TOQUE: abre a aba do WhatsApp JÁ no clique (evita bloqueio de pop-up no mobile) e redireciona após salvar o pedido no admin
+  var waWin=null; try{ waWin=window.open("","_blank"); }catch(e){}
   SENDING=true;
   var fbtn=document.querySelector('#checkoutSheet .btn-primary'); if(fbtn) fbtn.disabled=true;
   toast("Enviando pedido…");
@@ -789,18 +838,21 @@ function finalizar(){
   fetch(SUPA.url+"/rest/v1/rpc/create_order",{method:"POST",headers:H,body:JSON.stringify({p_cliente:nome,p_whatsapp:fone,p_endereco:endereco,p_bairro:bairro,p_pagamento:pg,p_troco:troco,p_obs:obs,p_tipo:tipo,p_items:p_items,p_cupom:(COUPON?COUPON.codigo:null)})})
    .then(function(r){ return r.json().then(function(j){ return {st:r.status,j:j}; }); })
    .then(function(o){ SENDING=false; if(fbtn) fbtn.disabled=false;
-     if(o.st>=400 || !o.j || !o.j.numero){ toast((o.j&&o.j.message)||"Não foi possível concluir o pedido. Revise o carrinho."); return; }
+     if(o.st>=400 || !o.j || !o.j.numero){ if(waWin){try{waWin.close();}catch(e){}} toast((o.j&&o.j.message)||"Não foi possível concluir o pedido. Revise o carrinho."); return; }
      var res=o.j;
-     var itensTxt=(res.itens||[]).map(function(i){ var t="• "+i.q+"x "+i.n+" — "+brl(i.sub!=null?i.sub:i.p*i.q); if(i.gelos&&i.gelos.length) t+="\n   🧊 gelos: "+i.gelos.map(function(g){return g.c+"x "+g.f;}).join(", "); return t; }).join("\n");
+     var itensTxt=(res.itens||[]).map(function(i){ var t="• "+i.q+"x "+i.n+(i.variante?(" ("+i.variante+")"):"")+" — "+brl(i.sub!=null?i.sub:i.p*i.q); if(i.gelos&&i.gelos.length) t+="\n   🧊 gelos: "+i.gelos.map(function(g){return g.c+"x "+g.f;}).join(", "); return t; }).join("\n");
      var entrega=tipo==="Entrega"?("🛵 *Entrega*\nEndereço: "+endereco+"\n"+(bairro?"Bairro: "+bairro+"\n":"")+(val("f_comp")?"Complemento: "+val("f_comp")+"\n":"")+(val("f_ref")?"Referência: "+val("f_ref")+"\n":"")):"🏪 *Retirada no local*\n";
      var pgTxt="*Pagamento:* "+pg+((pg==="Dinheiro"&&troco)?" (troco para R$ "+troco+")":"");
      var msg="🍻 *Vira Copo Delivery — Pedido #"+res.numero+"*\n\n*Cliente:* "+nome+"\n*WhatsApp:* "+fone+"\n\n"+entrega+"\n*Itens:*\n"+itensTxt+"\n\n*Subtotal:* "+brl(res.subtotal)+"\n"+((res.desconto&&res.desconto>0)?("*Desconto"+(res.cupom?" ("+res.cupom+")":"")+":* - "+brl(res.desconto)+"\n"):"")+(res.taxa>0?"*Taxa de entrega:* "+brl(res.taxa)+"\n":"")+"*Total:* "+brl(res.total)+"\n\n"+pgTxt+(obs?"\n*Obs:* "+obs:"")+"\n\n✅ Cliente declarou ser maior de 18 anos.\n🪪 *Documento com foto será exigido na entrega.* Sem comprovação de maioridade, a entrega não será concluída.";
      lastOrder={num:res.numero,msg:msg};
+     var waUrl="https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(msg);
+     if(waWin){ try{ waWin.location.href=waUrl; }catch(e){ waWin=null; } }
+     if(!waWin){ try{ window.open(waUrl,"_blank"); }catch(e){} }
      document.getElementById("confirmNum").textContent="#"+res.numero;
      document.getElementById("waPreview").innerHTML='<div class="wa-h">📲 Prévia da mensagem WhatsApp</div>'+escapeHtml(msg);
      cart=[]; syncAll();
      showSheet("confirmSheet");
-   }).catch(function(e){ SENDING=false; if(fbtn) fbtn.disabled=false; console.warn(e); toast("Erro de conexão. Tente novamente."); });
+   }).catch(function(e){ SENDING=false; if(fbtn) fbtn.disabled=false; if(waWin){try{waWin.close();}catch(_e){}} console.warn(e); toast("Erro de conexão. Tente novamente."); });
 }
 
 function enviarWhatsApp(){
